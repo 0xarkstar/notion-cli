@@ -8,6 +8,8 @@
 //!   property types via an `untagged` fallback to [`serde_json::Value`].
 //! - [`error`] — crate error hierarchy.
 
+pub mod api;
+pub mod config;
 pub mod error;
 pub mod types;
 pub mod validation;
