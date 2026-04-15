@@ -4,10 +4,17 @@
 #
 # Usage: NOTION_TOKEN=ntn_... ./scripts/live-mcp-test.sh <database_id>
 #
-# Default database: the one from the earlier smoke test.
+# The <database_id> can be a plain 32-hex ID, a dashed UUID, or a full
+# Notion URL. The target workspace must have the integration connected
+# (⋯ menu → Connections on the database).
 set -euo pipefail
 
-DB_ID="${1:-3439867aa14a80b28701cb1cfe1755b5}"
+DB_ID="${1:-}"
+if [[ -z "$DB_ID" ]]; then
+  echo "usage: $0 <database_id_or_url>" >&2
+  echo "  NOTION_TOKEN env var required" >&2
+  exit 64
+fi
 TITLE="mcp-live-$(date +%s)"
 
 cd "$(dirname "$0")/.."
