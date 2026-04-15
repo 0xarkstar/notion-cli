@@ -7,7 +7,7 @@
 //! - `--check-request` — builds the request body and prints it
 //! - Structured exit codes (2/10/64) on validation/config/usage errors
 //! - Output envelope (`--raw` vs default) and `--pretty`
-//! - No NOTION_TOKEN needed when using `--check-request`
+//! - No `NOTION_TOKEN` needed when using `--check-request`
 
 use assert_cmd::Command;
 
@@ -187,9 +187,19 @@ fn missing_token_exits_with_config_code_10() {
 }
 
 #[test]
-fn mcp_subcommand_is_stub_with_usage_code_64() {
+fn mcp_without_token_exits_with_config_code_10() {
+    // MCP server requires a token to build the Notion client. Without
+    // one, fail closed at config stage before entering the stdio loop.
     let assert = cli().args(["mcp"]).assert().failure();
-    assert_eq!(assert.get_output().status.code(), Some(64));
+    assert_eq!(assert.get_output().status.code(), Some(10));
+}
+
+#[test]
+fn mcp_help_lists_allow_write_flag() {
+    let assert = cli().args(["mcp", "--help"]).assert().success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    assert!(out.contains("--allow-write"), "help missing --allow-write:\n{out}");
+    assert!(out.contains("--audit-log"), "help missing --audit-log:\n{out}");
 }
 
 #[test]

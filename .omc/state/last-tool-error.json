@@ -1,0 +1,7 @@
+{
+  "tool_name": "Bash",
+  "tool_input_preview": "{\"command\":\"source \\\"$HOME/.cargo/env\\\" && RO=$(printf '%s\\\\n%s\\\\n%s\\\\n' \\\\\\n  '{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":1,\\\"method\\\":\\\"initialize\\\",\\\"params\\\":{\\\"protocolVersion\\\":\\\"2025-11-25\\\",\\\"capabilities\\\":...",
+  "error": "Exit code 1\n=== READ-ONLY TOOLS ===\nTraceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n  File \"<string>\", line 1, in <listcomp>\n  File \"/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/json/__init__.py\", line 346, in loads\n    return _default_decoder.decode(s)\n  File \"/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/json/decoder.py\", line 337, in decode\n    obj, end = self...",
+  "timestamp": "2026-04-15T02:31:42.646Z",
+  "retry_count": 2
+}

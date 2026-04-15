@@ -80,8 +80,8 @@ pub enum Command {
     Search(search::SearchArgs),
     /// Print JSON Schema for an internal type.
     Schema(schema::SchemaArgs),
-    /// Start an MCP stdio server (Phase 4 — stub only).
-    Mcp,
+    /// Start an MCP stdio server for agent integration (Hermes, Claude).
+    Mcp(mcp::McpArgs),
 }
 
 impl Cli {
@@ -113,6 +113,6 @@ pub async fn run(cli: Cli) -> Result<(), CliError> {
         Command::Page(cmd) => page::run(&cli, cmd).await,
         Command::Search(args) => search::run(&cli, args).await,
         Command::Schema(args) => schema::run(&cli, args),
-        Command::Mcp => mcp::run(),
+        Command::Mcp(args) => mcp::run(&cli, args).await,
     }
 }
