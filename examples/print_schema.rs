@@ -1,4 +1,4 @@
-//! Eyeball schema output for PropertyValue and Property.
+//! Eyeball schema output for `PropertyValue` and `Property`.
 //!
 //! Run: `cargo run --example print_schema`
 

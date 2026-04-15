@@ -37,14 +37,16 @@ macro_rules! define_notion_id {
             pub fn parse(input: &str) -> Result<Self> {
                 let hex: String = input.chars().filter(|c| *c != '-').collect();
                 if hex.len() != 32 {
-                    return Err(Error::InvalidId {
-                        reason: "must be 32 hex characters (dashes optional)",
-                    });
+                    return Err(Error::invalid_id(
+                        "must be 32 hex characters (dashes optional)",
+                        input,
+                    ));
                 }
                 if !hex.chars().all(|c| c.is_ascii_hexdigit()) {
-                    return Err(Error::InvalidId {
-                        reason: "must contain only hex digits and dashes",
-                    });
+                    return Err(Error::invalid_id(
+                        "must contain only hex digits and dashes",
+                        input,
+                    ));
                 }
                 Ok(Self(hex.to_ascii_lowercase()))
             }
@@ -104,6 +106,12 @@ macro_rules! define_notion_id {
         impl fmt::Display for $name {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 f.write_str(&self.0)
+            }
+        }
+
+        impl AsRef<str> for $name {
+            fn as_ref(&self) -> &str {
+                &self.0
             }
         }
 

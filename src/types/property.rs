@@ -21,13 +21,23 @@ use crate::types::common::{
 use crate::types::rich_text::RichText;
 
 /// Graceful-degradation wrapper for Notion property values.
+///
+/// # Read vs write
+///
+/// `Property` is a **read-side** type. Write request bodies should use
+/// `HashMap<String, PropertyValue>` directly (see Phase 2 request types)
+/// — sending [`Property::Raw`] on a write would produce a payload with
+/// an unknown `type` discriminator that Notion rejects with HTTP 400.
+///
+/// To enforce this at call sites, use [`Property::as_writable`] to
+/// guard conversions from read-side to write-side state.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum Property {
     /// A property value whose type this crate version knows.
     Known(PropertyValue),
     /// Unknown / future property type. Preserved as raw JSON for
-    /// read-only access; cannot be sent on write operations.
+    /// read-only access; **cannot be sent on write operations.**
     Raw(serde_json::Value),
 }
 
@@ -41,6 +51,28 @@ impl Property {
             Self::Known(v) => Some(v),
             Self::Raw(_) => None,
         }
+    }
+
+    /// Return the inner [`PropertyValue`] iff this property is safe to
+    /// include in a write request. Returns `None` for [`Property::Raw`],
+    /// which would be rejected by the Notion API.
+    ///
+    /// Intended for callers that read a page, mutate a subset of
+    /// properties, and PATCH back — filter by `as_writable()` first.
+    pub fn as_writable(&self) -> Option<&PropertyValue> {
+        self.as_known()
+    }
+
+    /// Consume into the inner [`PropertyValue`] if writable.
+    pub fn into_writable(self) -> Option<PropertyValue> {
+        match self {
+            Self::Known(v) => Some(v),
+            Self::Raw(_) => None,
+        }
+    }
+
+    pub fn is_writable(&self) -> bool {
+        matches!(self, Self::Known(_))
     }
 }
 
