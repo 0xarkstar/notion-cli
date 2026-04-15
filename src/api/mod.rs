@@ -16,6 +16,7 @@
 
 pub mod client;
 pub mod data_source;
+pub mod database;
 pub mod error;
 pub mod page;
 pub mod pagination;
