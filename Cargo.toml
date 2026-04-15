@@ -23,10 +23,16 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "sync"] }
 governor = "0.10"
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
+clap = { version = "4.6", features = ["derive", "env", "wrap_help"] }
+
+[[bin]]
+name = "notion-cli"
+path = "src/main.rs"
 
 [dev-dependencies]
 proptest = "1"
 wiremock = "0.6"
+assert_cmd = "2"
 
 [lints.rust]
 unsafe_code = "forbid"

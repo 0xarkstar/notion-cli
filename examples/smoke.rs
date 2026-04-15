@@ -18,7 +18,7 @@
 //!
 //! # What it exercises
 //!
-//! - `GET /v1/databases/{id}` — retrieve container, extract first data_source_id
+//! - `GET /v1/databases/{id}` — retrieve container, extract first `data_source_id`
 //! - `POST /v1/data_sources/{id}/query` — list pages (paginated)
 //! - `POST /v1/pages` — create a test page
 //! - `GET /v1/pages/{id}` — retrieve it
@@ -52,6 +52,7 @@ async fn main() -> ExitCode {
     ExitCode::SUCCESS
 }
 
+#[allow(clippy::too_many_lines, clippy::similar_names)]
 async fn run() -> Result<(), String> {
     let arg = std::env::args()
         .nth(1)
