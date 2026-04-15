@@ -236,6 +236,291 @@ fn invalid_properties_json_exits_validation_code_2() {
 
 // === Token can be passed via --token flag =================================
 
+// === --check-request covers each verb's parsing path ====================
+
+const DS_ID: &str = "fedcba9876543210fedcba9876543210";
+const PAGE_ID: &str = "11111111111111111111111111111111";
+
+#[test]
+fn check_request_ds_get() {
+    let assert = cli()
+        .args(["--check-request", "--raw", "ds", "get", VALID_ID])
+        .assert()
+        .success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(parsed.get("method").and_then(|v| v.as_str()), Some("GET"));
+    assert!(parsed
+        .get("path")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .starts_with("/v1/data_sources/"));
+}
+
+#[test]
+fn check_request_ds_query_with_filter() {
+    let assert = cli()
+        .args([
+            "--check-request",
+            "--raw",
+            "ds",
+            "query",
+            DS_ID,
+            "--filter",
+            r#"{"property":"Done","checkbox":{"equals":true}}"#,
+            "--page-size",
+            "25",
+        ])
+        .assert()
+        .success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(parsed.get("method").and_then(|v| v.as_str()), Some("POST"));
+    assert!(parsed
+        .get("path")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .contains("/query"));
+    assert!(parsed.pointer("/body/filter").is_some());
+    assert_eq!(
+        parsed.pointer("/body/page_size").and_then(|v| v.as_u64()),
+        Some(25),
+    );
+}
+
+#[test]
+fn check_request_ds_query_rejects_bad_filter_json() {
+    let assert = cli()
+        .args([
+            "--check-request",
+            "ds",
+            "query",
+            DS_ID,
+            "--filter",
+            "not json",
+        ])
+        .assert()
+        .failure();
+    assert_eq!(assert.get_output().status.code(), Some(2));
+}
+
+#[test]
+fn check_request_page_get() {
+    let assert = cli()
+        .args(["--check-request", "--raw", "page", "get", PAGE_ID])
+        .assert()
+        .success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(parsed.get("method").and_then(|v| v.as_str()), Some("GET"));
+}
+
+#[test]
+fn check_request_page_update() {
+    let assert = cli()
+        .args([
+            "--check-request",
+            "--raw",
+            "page",
+            "update",
+            PAGE_ID,
+            "--archived",
+            "true",
+            "--properties",
+            r#"{"Done":{"type":"checkbox","checkbox":false}}"#,
+        ])
+        .assert()
+        .success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(parsed.get("method").and_then(|v| v.as_str()), Some("PATCH"));
+    assert_eq!(
+        parsed.pointer("/body/archived").and_then(|v| v.as_bool()),
+        Some(true),
+    );
+}
+
+#[test]
+fn check_request_page_archive_sets_in_trash() {
+    let assert = cli()
+        .args(["--check-request", "--raw", "page", "archive", PAGE_ID])
+        .assert()
+        .success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(parsed.get("method").and_then(|v| v.as_str()), Some("PATCH"));
+    assert_eq!(
+        parsed.pointer("/body/in_trash").and_then(|v| v.as_bool()),
+        Some(true),
+    );
+}
+
+#[test]
+fn check_request_page_create_with_page_parent() {
+    let assert = cli()
+        .args([
+            "--check-request",
+            "--raw",
+            "page",
+            "create",
+            "--parent-page",
+            PAGE_ID,
+            "--properties",
+            "{}",
+        ])
+        .assert()
+        .success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(
+        parsed.pointer("/body/parent/type").and_then(|v| v.as_str()),
+        Some("page_id"),
+    );
+}
+
+#[test]
+fn check_request_search_with_query() {
+    let assert = cli()
+        .args([
+            "--check-request",
+            "--raw",
+            "search",
+            "hello",
+            "--filter",
+            r#"{"property":"object","value":"page"}"#,
+            "--page-size",
+            "10",
+        ])
+        .assert()
+        .success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(
+        parsed.get("path").and_then(|v| v.as_str()),
+        Some("/v1/search"),
+    );
+    assert_eq!(
+        parsed.pointer("/body/query").and_then(|v| v.as_str()),
+        Some("hello"),
+    );
+}
+
+#[test]
+fn check_request_search_empty_query() {
+    let assert = cli()
+        .args(["--check-request", "--raw", "search"])
+        .assert()
+        .success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(
+        parsed.get("path").and_then(|v| v.as_str()),
+        Some("/v1/search"),
+    );
+}
+
+#[test]
+fn check_request_search_rejects_bad_filter() {
+    let assert = cli()
+        .args(["--check-request", "search", "--filter", "not json"])
+        .assert()
+        .failure();
+    assert_eq!(assert.get_output().status.code(), Some(2));
+}
+
+#[test]
+fn check_request_ds_create_rejects_bad_properties() {
+    let assert = cli()
+        .args([
+            "--check-request",
+            "ds",
+            "create",
+            "--parent",
+            VALID_ID,
+            "--properties",
+            "not json",
+        ])
+        .assert()
+        .failure();
+    assert_eq!(assert.get_output().status.code(), Some(2));
+}
+
+#[test]
+fn check_request_ds_create_rejects_bad_parent() {
+    let assert = cli()
+        .args([
+            "--check-request",
+            "ds",
+            "create",
+            "--parent",
+            "not-a-db",
+            "--properties",
+            "{}",
+        ])
+        .assert()
+        .failure();
+    assert_eq!(assert.get_output().status.code(), Some(2));
+}
+
+#[test]
+fn check_request_page_create_rejects_bad_parent_data_source() {
+    let assert = cli()
+        .args([
+            "--check-request",
+            "page",
+            "create",
+            "--parent-data-source",
+            "not-an-id",
+            "--properties",
+            "{}",
+        ])
+        .assert()
+        .failure();
+    assert_eq!(assert.get_output().status.code(), Some(2));
+}
+
+#[test]
+fn schema_filter() {
+    let assert = cli().args(["schema", "filter"]).assert().success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    assert!(serde_json::from_str::<serde_json::Value>(&out).is_ok());
+}
+
+#[test]
+fn schema_sort() {
+    let assert = cli().args(["schema", "sort"]).assert().success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    assert!(serde_json::from_str::<serde_json::Value>(&out).is_ok());
+}
+
+#[test]
+fn schema_page() {
+    let assert = cli().args(["schema", "page"]).assert().success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    assert!(serde_json::from_str::<serde_json::Value>(&out).is_ok());
+}
+
+#[test]
+fn schema_database() {
+    let assert = cli().args(["schema", "database"]).assert().success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    assert!(serde_json::from_str::<serde_json::Value>(&out).is_ok());
+}
+
+#[test]
+fn schema_data_source() {
+    let assert = cli().args(["schema", "data-source"]).assert().success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    assert!(serde_json::from_str::<serde_json::Value>(&out).is_ok());
+}
+
+#[test]
+fn schema_rich_text() {
+    let assert = cli().args(["schema", "rich-text"]).assert().success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    assert!(serde_json::from_str::<serde_json::Value>(&out).is_ok());
+}
+
 #[test]
 fn token_via_flag_overrides_env() {
     // We're not making a real call — just asserting the flag parses.
