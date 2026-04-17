@@ -60,6 +60,16 @@ curl -LsSf https://github.com/0xarkstar/notion-cli/releases/latest/download/noti
 brew install 0xarkstar/tap/notion-cli
 ```
 
+### ClawHub (for Hermes / OpenClaw agents)
+
+Published as the `notion-cli-mcp` skill on [ClawHub](https://clawhub.ai/0xarkstar/notion-cli-mcp):
+
+```sh
+clawhub skill install 0xarkstar/notion-cli-mcp
+```
+
+The skill describes the full tool surface and example payloads for agents.
+
 ### From source
 
 ```sh

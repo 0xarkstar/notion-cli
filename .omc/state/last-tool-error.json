@@ -1,0 +1,7 @@
+{
+  "tool_name": "Bash",
+  "tool_input_preview": "{\"command\":\"curl -s \\\"https://api.github.com/repos/openclaw/skills/contents/skills/clawhub\\\" | jq '.[0:5] | .[] | {name, type}'\",\"description\":\"List clawhub's own skills for sampling\"}",
+  "error": "Exit code 5\njq: error (at <stdin>:5): Cannot index object with object",
+  "timestamp": "2026-04-17T02:06:47.117Z",
+  "retry_count": 2
+}

@@ -1,2 +1,6 @@
 {"t":0,"agent":"a7177bc","agent_type":"code-reviewer","event":"agent_start","parent_mode":"none"}
 {"t":0,"agent":"a7177bc","agent_type":"code-reviewer","event":"agent_stop","success":true,"duration_ms":106315}
+{"t":0,"agent":"ab925c6","agent_type":"document-specialist","event":"agent_start","parent_mode":"none"}
+{"t":0,"agent":"ab925c6","agent_type":"document-specialist","event":"agent_stop","success":true,"duration_ms":59592}
+{"t":0,"agent":"a3fc618","agent_type":"document-specialist","event":"agent_start","parent_mode":"none"}
+{"t":0,"agent":"a3fc618","agent_type":"document-specialist","event":"agent_stop","success":true,"duration_ms":84937}
