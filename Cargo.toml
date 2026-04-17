@@ -4,10 +4,36 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.85"
 license = "MIT"
-description = "Agent-First Notion CLI and MCP server"
+description = "Agent-first Notion CLI and MCP server for the API 2025-09-03+ data-source model"
 readme = "README.md"
-keywords = ["notion", "cli", "mcp", "agent"]
+repository = "https://github.com/0xarkstar/notion-cli"
+homepage = "https://github.com/0xarkstar/notion-cli"
+documentation = "https://docs.rs/notion-cli"
+keywords = ["notion", "cli", "mcp", "agent", "api"]
 categories = ["command-line-utilities", "api-bindings"]
+exclude = [
+    ".omc/**",
+    "scripts/**",
+    "examples/**",
+    "tests/**",
+]
+
+# Config for 'dist'
+[workspace.metadata.dist]
+# The preferred dist version to use in CI (Cargo.toml SemVer syntax)
+cargo-dist-version = "0.31.0"
+# CI backends to support
+ci = "github"
+# The installers to generate for each app
+installers = ["shell", "powershell", "homebrew"]
+# Target platforms to build apps for (Rust target-triple syntax)
+targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu"]
+# Which actions to run on pull requests
+pr-run-mode = "plan"
+# Path that installers should place binaries in
+install-path = "CARGO_HOME"
+# Whether to install an updater program
+install-updater = false
 
 [lib]
 name = "notion_cli"
@@ -44,3 +70,8 @@ pedantic = { level = "warn", priority = -1 }
 module_name_repetitions = "allow"
 missing_errors_doc = "allow"
 must_use_candidate = "allow"
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
