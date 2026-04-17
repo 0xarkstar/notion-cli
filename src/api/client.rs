@@ -102,6 +102,10 @@ impl NotionClient {
         self.request(Method::POST, path, Some(body)).await
     }
 
+    pub async fn delete<T: DeserializeOwned>(&self, path: &str) -> Result<T, ApiError> {
+        self.request::<_, T>(Method::DELETE, path, None::<&()>).await
+    }
+
     pub async fn patch<B: Serialize, T: DeserializeOwned>(
         &self,
         path: &str,

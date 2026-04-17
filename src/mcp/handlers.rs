@@ -5,6 +5,7 @@ use std::collections::HashMap;
 
 use rmcp::ErrorData;
 
+use crate::api::block::{AppendBlockChildrenRequest, UpdateBlockRequest};
 use crate::api::data_source::{
     CreateDataSourceParent, CreateDataSourceRequest, QueryDataSourceRequest,
 };
@@ -12,13 +13,15 @@ use crate::api::page::{CreatePageRequest, PageParent, UpdatePageRequest};
 use crate::api::search::SearchRequest;
 use crate::api::{ApiError, NotionClient};
 use crate::mcp::params::{
-    CreateDataSourceParams, CreatePageParams, GetDataSourceParams, GetPageParams,
-    QueryDataSourceParams, SearchParams, UpdatePageParams,
+    AppendBlockChildrenParams, CreateDataSourceParams, CreatePageParams, DeleteBlockParams,
+    GetBlockParams, GetDataSourceParams, GetPageParams, ListBlockChildrenParams,
+    QueryDataSourceParams, SearchParams, UpdateBlockParams, UpdatePageParams,
 };
 use crate::output::wrap_untrusted;
+use crate::types::block::BlockBody;
 use crate::types::property::PropertyValue;
 use crate::types::rich_text::{Annotations, RichText, RichTextContent, TextContent};
-use crate::validation::{DataSourceId, DatabaseId, PageId};
+use crate::validation::{BlockId, DataSourceId, DatabaseId, PageId};
 
 fn api_to_rpc(e: &ApiError) -> ErrorData {
     match e {
@@ -138,7 +141,13 @@ pub async fn create_page(
         }
     };
     let properties: HashMap<String, PropertyValue> = parse_json(&p.properties, "properties")?;
-    let req = CreatePageRequest { parent, properties };
+    let children: Vec<BlockBody> = p
+        .children
+        .as_ref()
+        .map(|v| parse_json(v, "children"))
+        .transpose()?
+        .unwrap_or_default();
+    let req = CreatePageRequest { parent, properties, children };
     let page = client.create_page(&req).await.map_err(|e| api_to_rpc(&e))?;
     Ok(wrap_untrusted(&serde_json::to_value(page).map_err(|e| {
         ErrorData::internal_error(format!("serialize: {e}"), None)
@@ -188,6 +197,87 @@ pub async fn create_data_source(
     };
     let ds = client.create_data_source(&req).await.map_err(|e| api_to_rpc(&e))?;
     Ok(wrap_untrusted(&serde_json::to_value(ds).map_err(|e| {
+        ErrorData::internal_error(format!("serialize: {e}"), None)
+    })?))
+}
+
+// === Block handlers =======================================================
+
+pub async fn get_block(
+    client: &NotionClient,
+    p: GetBlockParams,
+) -> Result<serde_json::Value, ErrorData> {
+    let id = validate(BlockId::from_url_or_id(&p.block_id), "block_id")?;
+    let block = client.retrieve_block(&id).await.map_err(|e| api_to_rpc(&e))?;
+    Ok(wrap_untrusted(&serde_json::to_value(block).map_err(|e| {
+        ErrorData::internal_error(format!("serialize: {e}"), None)
+    })?))
+}
+
+pub async fn list_block_children(
+    client: &NotionClient,
+    p: ListBlockChildrenParams,
+) -> Result<serde_json::Value, ErrorData> {
+    let id = validate(BlockId::from_url_or_id(&p.block_id), "block_id")?;
+    let resp = client
+        .list_block_children(&id, p.start_cursor.as_deref(), p.page_size)
+        .await
+        .map_err(|e| api_to_rpc(&e))?;
+    Ok(wrap_untrusted(&serde_json::to_value(resp).map_err(|e| {
+        ErrorData::internal_error(format!("serialize: {e}"), None)
+    })?))
+}
+
+pub async fn append_block_children(
+    client: &NotionClient,
+    p: AppendBlockChildrenParams,
+) -> Result<serde_json::Value, ErrorData> {
+    let id = validate(BlockId::from_url_or_id(&p.block_id), "block_id")?;
+    let children: Vec<BlockBody> = parse_json(&p.children, "children")?;
+    let after = p
+        .after
+        .as_deref()
+        .map(BlockId::from_url_or_id)
+        .transpose()
+        .map_err(|e| ErrorData::invalid_params(format!("after: {e}"), None))?;
+    let req = AppendBlockChildrenRequest { children, after };
+    let resp = client
+        .append_block_children(&id, &req)
+        .await
+        .map_err(|e| api_to_rpc(&e))?;
+    Ok(wrap_untrusted(&serde_json::to_value(resp).map_err(|e| {
+        ErrorData::internal_error(format!("serialize: {e}"), None)
+    })?))
+}
+
+pub async fn update_block(
+    client: &NotionClient,
+    p: UpdateBlockParams,
+) -> Result<serde_json::Value, ErrorData> {
+    let id = validate(BlockId::from_url_or_id(&p.block_id), "block_id")?;
+    let body: Option<BlockBody> = p
+        .body
+        .as_ref()
+        .map(|v| parse_json(v, "body"))
+        .transpose()?;
+    let req = UpdateBlockRequest {
+        body,
+        archived: p.archived,
+        in_trash: p.in_trash,
+    };
+    let block = client.update_block(&id, &req).await.map_err(|e| api_to_rpc(&e))?;
+    Ok(wrap_untrusted(&serde_json::to_value(block).map_err(|e| {
+        ErrorData::internal_error(format!("serialize: {e}"), None)
+    })?))
+}
+
+pub async fn delete_block(
+    client: &NotionClient,
+    p: DeleteBlockParams,
+) -> Result<serde_json::Value, ErrorData> {
+    let id = validate(BlockId::from_url_or_id(&p.block_id), "block_id")?;
+    let block = client.delete_block(&id).await.map_err(|e| api_to_rpc(&e))?;
+    Ok(wrap_untrusted(&serde_json::to_value(block).map_err(|e| {
         ErrorData::internal_error(format!("serialize: {e}"), None)
     })?))
 }

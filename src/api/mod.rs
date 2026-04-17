@@ -14,6 +14,7 @@
 //! the [`crate::types::Property`] wrapper) so that `Raw` fallbacks
 //! cannot accidentally leak into write payloads.
 
+pub mod block;
 pub mod client;
 pub mod data_source;
 pub mod database;

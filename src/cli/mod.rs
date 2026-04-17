@@ -18,6 +18,7 @@
 //! - 65: JSON parse error
 //! - 74: I/O error
 
+pub mod block;
 pub mod db;
 pub mod ds;
 pub mod error;
@@ -76,6 +77,9 @@ pub enum Command {
     /// Page operations.
     #[command(subcommand)]
     Page(page::PageCmd),
+    /// Block operations — retrieve, list children, append, update, delete.
+    #[command(subcommand)]
+    Block(block::BlockCmd),
     /// Full-text search across pages / data sources / databases.
     Search(search::SearchArgs),
     /// Print JSON Schema for an internal type.
@@ -111,6 +115,7 @@ pub async fn run(cli: Cli) -> Result<(), CliError> {
         Command::Db(cmd) => db::run(&cli, cmd).await,
         Command::Ds(cmd) => ds::run(&cli, cmd).await,
         Command::Page(cmd) => page::run(&cli, cmd).await,
+        Command::Block(cmd) => block::run(&cli, cmd).await,
         Command::Search(args) => search::run(&cli, args).await,
         Command::Schema(args) => schema::run(&cli, args),
         Command::Mcp(args) => mcp::run(&cli, args).await,

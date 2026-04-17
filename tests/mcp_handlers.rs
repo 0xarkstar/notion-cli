@@ -11,8 +11,9 @@ use notion_cli::api::{ClientConfig, NotionClient};
 use notion_cli::config::NotionToken;
 use notion_cli::mcp::handlers;
 use notion_cli::mcp::params::{
-    CreateDataSourceParams, CreatePageParams, GetDataSourceParams, GetPageParams,
-    QueryDataSourceParams, SearchParams, UpdatePageParams,
+    AppendBlockChildrenParams, CreateDataSourceParams, CreatePageParams, DeleteBlockParams,
+    GetBlockParams, GetDataSourceParams, GetPageParams, ListBlockChildrenParams,
+    QueryDataSourceParams, SearchParams, UpdateBlockParams, UpdatePageParams,
 };
 use serde_json::json;
 use wiremock::matchers::{method, path};
@@ -21,6 +22,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 const DB_ID: &str = "abcdef0123456789abcdef0123456789";
 const DS_ID: &str = "fedcba9876543210fedcba9876543210";
 const PAGE_ID: &str = "11111111111111111111111111111111";
+const BLOCK_ID: &str = "22222222222222222222222222222222";
 
 fn client(server: &MockServer) -> NotionClient {
     NotionClient::with_config(
@@ -213,6 +215,7 @@ async fn handler_create_page_data_source_parent() {
             parent_data_source_id: Some(DS_ID.into()),
             parent_page_id: None,
             properties: json!({"Done": {"type": "checkbox", "checkbox": true}}),
+            children: None,
         },
     )
     .await
@@ -235,6 +238,7 @@ async fn handler_create_page_page_parent() {
             parent_data_source_id: None,
             parent_page_id: Some(PAGE_ID.into()),
             properties: json!({}),
+            children: None,
         },
     )
     .await
@@ -252,6 +256,7 @@ async fn handler_create_page_rejects_both_parents() {
             parent_data_source_id: Some(DS_ID.into()),
             parent_page_id: Some(PAGE_ID.into()),
             properties: json!({}),
+            children: None,
         },
     )
     .await
@@ -269,6 +274,7 @@ async fn handler_create_page_rejects_no_parent() {
             parent_data_source_id: None,
             parent_page_id: None,
             properties: json!({}),
+            children: None,
         },
     )
     .await
@@ -340,6 +346,176 @@ async fn handler_create_data_source_rejects_bad_parent() {
     .await
     .unwrap_err();
     assert!(err.message.contains("parent_database_id"), "got {err:?}");
+}
+
+// === Block handlers =======================================================
+
+fn block_response(id: &str, text: &str) -> serde_json::Value {
+    json!({
+        "object": "block",
+        "id": id,
+        "created_time": "2026-04-17T10:00:00.000Z",
+        "last_edited_time": "2026-04-17T10:00:00.000Z",
+        "has_children": false,
+        "archived": false,
+        "in_trash": false,
+        "type": "paragraph",
+        "paragraph": {
+            "rich_text": [{"type":"text","text":{"content": text},"annotations":{"bold":false,"italic":false,"strikethrough":false,"underline":false,"code":false,"color":"default"},"plain_text": text}],
+            "color": "default"
+        }
+    })
+}
+
+#[tokio::test]
+async fn handler_get_block() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path(format!("/v1/blocks/{BLOCK_ID}")))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(block_response(BLOCK_ID, "hi")),
+        )
+        .mount(&server)
+        .await;
+    let c = client(&server);
+    let out = notion_cli::mcp::handlers::get_block(
+        &c,
+        GetBlockParams { block_id: BLOCK_ID.into() },
+    )
+    .await
+    .unwrap();
+    assert_envelope(&out);
+}
+
+#[tokio::test]
+async fn handler_get_block_rejects_invalid_id() {
+    let server = MockServer::start().await;
+    let c = client(&server);
+    let err = notion_cli::mcp::handlers::get_block(
+        &c,
+        GetBlockParams { block_id: "not-an-id".into() },
+    )
+    .await
+    .unwrap_err();
+    assert!(err.message.contains("block_id"), "got {err:?}");
+}
+
+#[tokio::test]
+async fn handler_list_block_children() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path(format!("/v1/blocks/{BLOCK_ID}/children")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "object": "list",
+            "results": [block_response(BLOCK_ID, "a")],
+            "has_more": false,
+            "next_cursor": null
+        })))
+        .mount(&server)
+        .await;
+    let c = client(&server);
+    let out = notion_cli::mcp::handlers::list_block_children(
+        &c,
+        ListBlockChildrenParams {
+            block_id: BLOCK_ID.into(),
+            start_cursor: None,
+            page_size: Some(5),
+        },
+    )
+    .await
+    .unwrap();
+    assert_envelope(&out);
+}
+
+#[tokio::test]
+async fn handler_append_block_children() {
+    let server = MockServer::start().await;
+    Mock::given(method("PATCH"))
+        .and(path(format!("/v1/blocks/{BLOCK_ID}/children")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "object": "list",
+            "results": [],
+            "has_more": false,
+            "next_cursor": null
+        })))
+        .mount(&server)
+        .await;
+    let c = client(&server);
+    let out = notion_cli::mcp::handlers::append_block_children(
+        &c,
+        AppendBlockChildrenParams {
+            block_id: BLOCK_ID.into(),
+            children: json!([
+                {"type":"paragraph","paragraph":{"rich_text":[],"color":"default"}}
+            ]),
+            after: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert_envelope(&out);
+}
+
+#[tokio::test]
+async fn handler_append_block_children_rejects_malformed_children() {
+    let server = MockServer::start().await;
+    let c = client(&server);
+    let err = notion_cli::mcp::handlers::append_block_children(
+        &c,
+        AppendBlockChildrenParams {
+            block_id: BLOCK_ID.into(),
+            children: json!({"not": "an array"}),
+            after: None,
+        },
+    )
+    .await
+    .unwrap_err();
+    assert!(err.message.contains("children"), "got {err:?}");
+}
+
+#[tokio::test]
+async fn handler_update_block_archive() {
+    let server = MockServer::start().await;
+    Mock::given(method("PATCH"))
+        .and(path(format!("/v1/blocks/{BLOCK_ID}")))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(block_response(BLOCK_ID, "x")),
+        )
+        .mount(&server)
+        .await;
+    let c = client(&server);
+    let out = notion_cli::mcp::handlers::update_block(
+        &c,
+        UpdateBlockParams {
+            block_id: BLOCK_ID.into(),
+            body: None,
+            archived: Some(true),
+            in_trash: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert_envelope(&out);
+}
+
+#[tokio::test]
+async fn handler_delete_block() {
+    let server = MockServer::start().await;
+    Mock::given(method("DELETE"))
+        .and(path(format!("/v1/blocks/{BLOCK_ID}")))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(block_response(BLOCK_ID, "gone")),
+        )
+        .mount(&server)
+        .await;
+    let c = client(&server);
+    let out = notion_cli::mcp::handlers::delete_block(
+        &c,
+        DeleteBlockParams { block_id: BLOCK_ID.into() },
+    )
+    .await
+    .unwrap();
+    assert_envelope(&out);
 }
 
 // === Error mapping =======================================================

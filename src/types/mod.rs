@@ -1,3 +1,4 @@
+pub mod block;
 pub mod common;
 pub mod data_source;
 pub mod database;
@@ -7,6 +8,10 @@ pub mod property;
 pub mod rich_text;
 pub mod sort;
 
+pub use block::{
+    Block, BlockBody, CalloutBlock, CodeBlock, EmptyBlock, HeadingBlock, TextBlock,
+    ToDoBlock, TypedBlock,
+};
 pub use common::{
     Color, DateValue, RelationRef, SelectOption, StatusOption, UniqueIdValue, UserRef,
 };

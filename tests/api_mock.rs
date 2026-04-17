@@ -427,6 +427,7 @@ async fn create_page_under_data_source() {
                 data_source_id: DataSourceId::parse(DS_ID_HEX).unwrap(),
             },
             properties: props,
+            children: vec![],
         })
         .await
         .unwrap();

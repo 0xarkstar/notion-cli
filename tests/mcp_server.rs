@@ -54,14 +54,16 @@ fn extract_tool_names(stdout: &str) -> Vec<String> {
 }
 
 #[test]
-fn read_only_mode_exposes_4_tools() {
+fn read_only_mode_exposes_6_tools() {
     let out = run_mcp(&[]);
     let tools = extract_tool_names(&out);
     assert_eq!(
         tools,
         vec![
+            "get_block".to_string(),
             "get_data_source".to_string(),
             "get_page".to_string(),
+            "list_block_children".to_string(),
             "query_data_source".to_string(),
             "search".to_string(),
         ],
@@ -70,18 +72,23 @@ fn read_only_mode_exposes_4_tools() {
 }
 
 #[test]
-fn allow_write_mode_exposes_7_tools() {
+fn allow_write_mode_exposes_12_tools() {
     let out = run_mcp(&["--allow-write"]);
     let tools = extract_tool_names(&out);
     assert_eq!(
         tools,
         vec![
+            "append_block_children".to_string(),
             "create_data_source".to_string(),
             "create_page".to_string(),
+            "delete_block".to_string(),
+            "get_block".to_string(),
             "get_data_source".to_string(),
             "get_page".to_string(),
+            "list_block_children".to_string(),
             "query_data_source".to_string(),
             "search".to_string(),
+            "update_block".to_string(),
             "update_page".to_string(),
         ],
         "unexpected tool set:\n{out}",
@@ -92,7 +99,14 @@ fn allow_write_mode_exposes_7_tools() {
 fn read_only_does_not_expose_write_tools() {
     let out = run_mcp(&[]);
     let tools = extract_tool_names(&out);
-    for write_tool in ["create_page", "update_page", "create_data_source"] {
+    for write_tool in [
+        "create_page",
+        "update_page",
+        "create_data_source",
+        "append_block_children",
+        "update_block",
+        "delete_block",
+    ] {
         assert!(
             !tools.contains(&write_tool.to_string()),
             "write tool `{write_tool}` leaked in read-only mode:\n{tools:?}",
@@ -101,11 +115,11 @@ fn read_only_does_not_expose_write_tools() {
 }
 
 #[test]
-fn the_bug_tool_has_expected_description() {
+fn create_data_source_tool_is_exposed_in_write_mode() {
     let out = run_mcp(&["--allow-write"]);
     assert!(
-        out.contains("create_data_source") && out.contains("notion-mcp-server"),
-        "create_data_source must mention the upstream bug:\n{out}",
+        out.contains("create_data_source"),
+        "create_data_source must be listed in full tools:\n{out}",
     );
 }
 

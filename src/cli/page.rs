@@ -28,6 +28,10 @@ pub enum PageCmd {
         /// Properties JSON: `HashMap<String, PropertyValue>`.
         #[arg(long)]
         properties: String,
+        /// Optional JSON array of block bodies for the page body.
+        /// Example: `[{"type":"paragraph","paragraph":{"rich_text":[...]}}]`.
+        #[arg(long)]
+        children: Option<String>,
     },
     /// Update a page's properties / archive / trash state.
     Update {
@@ -72,6 +76,7 @@ pub async fn run(cli: &Cli, cmd: &PageCmd) -> Result<(), CliError> {
             parent_data_source,
             parent_page,
             properties,
+            children,
         } => {
             let parent = match (parent_data_source, parent_page) {
                 (Some(ds), None) => PageParent::DataSource {
@@ -90,9 +95,16 @@ pub async fn run(cli: &Cli, cmd: &PageCmd) -> Result<(), CliError> {
             };
             let props: HashMap<String, PropertyValue> = serde_json::from_str(properties)
                 .map_err(|e| CliError::Validation(format!("--properties: {e}")))?;
+            let child_blocks = children
+                .as_deref()
+                .map(crate::api::block::parse_children)
+                .transpose()
+                .map_err(|e| CliError::Validation(format!("--children: {e}")))?
+                .unwrap_or_default();
             let req = CreatePageRequest {
                 parent,
                 properties: props,
+                children: child_blocks,
             };
             if cli.check_request {
                 emit(&cli.output_options(), &serde_json::json!({

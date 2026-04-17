@@ -13,8 +13,9 @@ use crate::api::NotionClient;
 use crate::mcp::audit::AuditLog;
 use crate::mcp::handlers;
 use crate::mcp::params::{
-    CreateDataSourceParams, CreatePageParams, GetDataSourceParams, GetPageParams,
-    QueryDataSourceParams, SearchParams, UpdatePageParams,
+    AppendBlockChildrenParams, CreateDataSourceParams, CreatePageParams, DeleteBlockParams,
+    GetBlockParams, GetDataSourceParams, GetPageParams, ListBlockChildrenParams,
+    QueryDataSourceParams, SearchParams, UpdateBlockParams, UpdatePageParams,
 };
 
 struct Inner {
@@ -73,6 +74,30 @@ impl NotionReadOnly {
         params: Parameters<SearchParams>,
     ) -> Result<CallToolResult, ErrorData> {
         Ok(to_result(&handlers::search(&self.inner.client, params.0).await?))
+    }
+
+    #[tool(
+        name = "get_block",
+        description = "Retrieve a single Notion block by ID."
+    )]
+    async fn get_block(
+        &self,
+        params: Parameters<GetBlockParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        Ok(to_result(&handlers::get_block(&self.inner.client, params.0).await?))
+    }
+
+    #[tool(
+        name = "list_block_children",
+        description = "List child blocks of a parent block (a page ID is also a block ID). Returns paginated results."
+    )]
+    async fn list_block_children(
+        &self,
+        params: Parameters<ListBlockChildrenParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        Ok(to_result(
+            &handlers::list_block_children(&self.inner.client, params.0).await?,
+        ))
     }
 }
 
@@ -168,7 +193,7 @@ impl NotionFull {
 
     #[tool(
         name = "create_data_source",
-        description = "Create a new data source inside a database container. This is the endpoint that @notionhq/notion-mcp-server fails on for Notion API 2025-09-03+. Write operation — audited."
+        description = "Create a new data source inside a database container (Notion API 2025-09-03+). Write operation — audited."
     )]
     async fn create_data_source(
         &self,
@@ -178,6 +203,84 @@ impl NotionFull {
         let result = handlers::create_data_source(&self.inner.client, params.0).await;
         self.inner.audit.record(
             "create_data_source",
+            Some(&target),
+            result.as_ref().map(|_| ()).map_err(|e| e.message.as_ref()),
+        );
+        Ok(to_result(&result?))
+    }
+
+    #[tool(
+        name = "get_block",
+        description = "Retrieve a single Notion block by ID."
+    )]
+    async fn get_block(
+        &self,
+        params: Parameters<GetBlockParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        Ok(to_result(&handlers::get_block(&self.inner.client, params.0).await?))
+    }
+
+    #[tool(
+        name = "list_block_children",
+        description = "List child blocks of a parent block (a page ID is also a block ID). Paginated."
+    )]
+    async fn list_block_children(
+        &self,
+        params: Parameters<ListBlockChildrenParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        Ok(to_result(
+            &handlers::list_block_children(&self.inner.client, params.0).await?,
+        ))
+    }
+
+    #[tool(
+        name = "append_block_children",
+        description = "Append new child blocks to a parent block. Children are block bodies (e.g. paragraph, heading_1, to_do). Write operation — audited."
+    )]
+    async fn append_block_children(
+        &self,
+        params: Parameters<AppendBlockChildrenParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let target = params.0.block_id.clone();
+        let result = handlers::append_block_children(&self.inner.client, params.0).await;
+        self.inner.audit.record(
+            "append_block_children",
+            Some(&target),
+            result.as_ref().map(|_| ()).map_err(|e| e.message.as_ref()),
+        );
+        Ok(to_result(&result?))
+    }
+
+    #[tool(
+        name = "update_block",
+        description = "Update a block's content, archive, or trash state. Write operation — audited."
+    )]
+    async fn update_block(
+        &self,
+        params: Parameters<UpdateBlockParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let target = params.0.block_id.clone();
+        let result = handlers::update_block(&self.inner.client, params.0).await;
+        self.inner.audit.record(
+            "update_block",
+            Some(&target),
+            result.as_ref().map(|_| ()).map_err(|e| e.message.as_ref()),
+        );
+        Ok(to_result(&result?))
+    }
+
+    #[tool(
+        name = "delete_block",
+        description = "Archive (soft-delete) a block. Write operation — audited."
+    )]
+    async fn delete_block(
+        &self,
+        params: Parameters<DeleteBlockParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let target = params.0.block_id.clone();
+        let result = handlers::delete_block(&self.inner.client, params.0).await;
+        self.inner.audit.record(
+            "delete_block",
             Some(&target),
             result.as_ref().map(|_| ()).map_err(|e| e.message.as_ref()),
         );

@@ -29,10 +29,16 @@ pub enum PageParent {
 /// Properties use `HashMap<String, PropertyValue>` directly — not the
 /// `Property` wrapper — because the `Raw` fallback has no compatible
 /// wire format (Notion rejects unknown `type` discriminators on write).
+///
+/// `children` optionally provides the page body at creation time —
+/// one-shot page + body in a single API call (preferred over
+/// create + append).
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct CreatePageRequest {
     pub parent: PageParent,
     pub properties: HashMap<String, PropertyValue>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub children: Vec<crate::types::block::BlockBody>,
 }
 
 /// Request body for `PATCH /v1/pages/{id}`.

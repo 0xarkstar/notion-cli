@@ -83,6 +83,12 @@ pub struct CreatePageParams {
     ///            "text": {"content": "Hello"}}]}}`.
     /// Call `notion-cli schema property-value` for the full shape.
     pub properties: serde_json::Value,
+    /// Optional page body as a JSON array of block bodies.
+    /// Preferred over create + append — sets up the page and its
+    /// content in one API call. Example:
+    /// `[{"type":"heading_1","heading_1":{"rich_text":[{"type":"text","text":{"content":"Title"}}]}}]`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub children: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -110,4 +116,70 @@ pub struct CreateDataSourceParams {
     /// Property schemas. Example:
     /// `{"Name": {"title": {}}, "Tags": {"multi_select": {"options": []}}}`.
     pub properties: serde_json::Value,
+}
+
+// === Block params =========================================================
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct GetBlockParams {
+    /// Notion block ID.
+    pub block_id: String,
+}
+
+#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
+pub struct ListBlockChildrenParams {
+    /// Parent block ID (a page ID is also a block ID).
+    pub block_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_cursor: Option<String>,
+    /// Results per page (1-100).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page_size: Option<u8>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct AppendBlockChildrenParams {
+    /// Parent block ID to append children into.
+    pub block_id: String,
+    /// JSON array of block bodies. Each element must have `type` and
+    /// the type-specific content, e.g.
+    /// `[{"type":"paragraph","paragraph":{"rich_text":[{"type":"text","text":{"content":"Hi"}}]}}]`.
+    /// Call `notion-cli schema rich-text` / `schema property-value` for
+    /// the full nested shape. Supported block types:
+    /// `paragraph`, `heading_1`/`heading_2`/`heading_3`,
+    /// `bulleted_list_item`, `numbered_list_item`, `to_do`, `toggle`,
+    /// `code`, `quote`, `callout`, `divider`.
+    pub children: serde_json::Value,
+    /// Optional: append after this sibling block ID.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub after: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct UpdateBlockParams {
+    pub block_id: String,
+    /// JSON body of a single block. Top-level `type` must match the
+    /// block's existing type (Notion does not allow type change on
+    /// update). The shape is flat — `type` and the type-specific
+    /// content field are siblings. Examples:
+    ///
+    /// - Paragraph:
+    ///   `{"type":"paragraph","paragraph":{"rich_text":[{"type":"text","text":{"content":"new"}}],"color":"default"}}`
+    /// - To-do with checked toggle:
+    ///   `{"type":"to_do","to_do":{"rich_text":[{"type":"text","text":{"content":"task"}}],"checked":true,"color":"default"}}`
+    /// - Heading:
+    ///   `{"type":"heading_1","heading_1":{"rich_text":[{"type":"text","text":{"content":"Title"}}],"color":"default","is_toggleable":false}}`
+    ///
+    /// Omit this field to only change `archived`/`in_trash`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub archived: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub in_trash: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct DeleteBlockParams {
+    pub block_id: String,
 }

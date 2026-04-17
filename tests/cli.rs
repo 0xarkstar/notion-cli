@@ -234,6 +234,155 @@ fn invalid_properties_json_exits_validation_code_2() {
     assert_eq!(assert.get_output().status.code(), Some(2));
 }
 
+// === Block commands (--check-request) ====================================
+
+const BLOCK_ID: &str = "cccccccccccccccccccccccccccccccc";
+
+#[test]
+fn check_request_block_get() {
+    let assert = cli()
+        .args(["--check-request", "--raw", "block", "get", BLOCK_ID])
+        .assert()
+        .success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(parsed.get("method").and_then(|v| v.as_str()), Some("GET"));
+    assert!(parsed
+        .get("path")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .starts_with("/v1/blocks/"));
+}
+
+#[test]
+fn check_request_block_list_with_cursor() {
+    let assert = cli()
+        .args([
+            "--check-request",
+            "--raw",
+            "block",
+            "list",
+            BLOCK_ID,
+            "--start-cursor",
+            "abc",
+            "--page-size",
+            "10",
+        ])
+        .assert()
+        .success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
+    let path_s = parsed.get("path").and_then(|v| v.as_str()).unwrap_or("");
+    assert!(path_s.contains("/children"));
+    assert!(path_s.contains("start_cursor=abc"));
+    assert!(path_s.contains("page_size=10"));
+}
+
+#[test]
+fn check_request_block_append_typed() {
+    let assert = cli()
+        .args([
+            "--check-request",
+            "--raw",
+            "block",
+            "append",
+            BLOCK_ID,
+            "--children",
+            r#"[{"type":"paragraph","paragraph":{"rich_text":[],"color":"default"}}]"#,
+        ])
+        .assert()
+        .success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(parsed.get("method").and_then(|v| v.as_str()), Some("PATCH"));
+    assert!(parsed.pointer("/body/children").is_some());
+}
+
+#[test]
+fn check_request_block_append_rejects_bad_json() {
+    let assert = cli()
+        .args([
+            "--check-request",
+            "block",
+            "append",
+            BLOCK_ID,
+            "--children",
+            "not json",
+        ])
+        .assert()
+        .failure();
+    assert_eq!(assert.get_output().status.code(), Some(2));
+}
+
+#[test]
+fn check_request_block_update_archive() {
+    let assert = cli()
+        .args([
+            "--check-request",
+            "--raw",
+            "block",
+            "update",
+            BLOCK_ID,
+            "--archived",
+            "true",
+        ])
+        .assert()
+        .success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(parsed.get("method").and_then(|v| v.as_str()), Some("PATCH"));
+    assert_eq!(
+        parsed.pointer("/body/archived").and_then(serde_json::Value::as_bool),
+        Some(true),
+    );
+}
+
+#[test]
+fn check_request_block_delete() {
+    let assert = cli()
+        .args(["--check-request", "--raw", "block", "delete", BLOCK_ID])
+        .assert()
+        .success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(parsed.get("method").and_then(|v| v.as_str()), Some("DELETE"));
+}
+
+#[test]
+fn check_request_page_create_with_children() {
+    let assert = cli()
+        .args([
+            "--check-request",
+            "--raw",
+            "page",
+            "create",
+            "--parent-data-source",
+            VALID_ID,
+            "--properties",
+            "{}",
+            "--children",
+            r#"[{"type":"paragraph","paragraph":{"rich_text":[],"color":"default"}}]"#,
+        ])
+        .assert()
+        .success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
+    let children = parsed.pointer("/body/children").and_then(|v| v.as_array());
+    assert_eq!(children.map(std::vec::Vec::len), Some(1));
+}
+
+#[test]
+fn schema_block_type() {
+    let assert = cli().args(["schema", "property-value"]).assert().success();
+    let _out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    // Also add a quick block schema check
+    let assert2 = cli().args(["block", "--help"]).assert().success();
+    let out2 = String::from_utf8_lossy(&assert2.get_output().stdout).to_string();
+    for sub in ["get", "list", "append", "update", "delete"] {
+        assert!(out2.contains(sub), "block help missing subcommand `{sub}`:\n{out2}");
+    }
+}
+
 // === Token can be passed via --token flag =================================
 
 // === --check-request covers each verb's parsing path ====================
@@ -283,7 +432,7 @@ fn check_request_ds_query_with_filter() {
         .contains("/query"));
     assert!(parsed.pointer("/body/filter").is_some());
     assert_eq!(
-        parsed.pointer("/body/page_size").and_then(|v| v.as_u64()),
+        parsed.pointer("/body/page_size").and_then(serde_json::Value::as_u64),
         Some(25),
     );
 }
@@ -335,7 +484,7 @@ fn check_request_page_update() {
     let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
     assert_eq!(parsed.get("method").and_then(|v| v.as_str()), Some("PATCH"));
     assert_eq!(
-        parsed.pointer("/body/archived").and_then(|v| v.as_bool()),
+        parsed.pointer("/body/archived").and_then(serde_json::Value::as_bool),
         Some(true),
     );
 }
@@ -350,7 +499,7 @@ fn check_request_page_archive_sets_in_trash() {
     let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
     assert_eq!(parsed.get("method").and_then(|v| v.as_str()), Some("PATCH"));
     assert_eq!(
-        parsed.pointer("/body/in_trash").and_then(|v| v.as_bool()),
+        parsed.pointer("/body/in_trash").and_then(serde_json::Value::as_bool),
         Some(true),
     );
 }
