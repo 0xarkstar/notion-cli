@@ -43,8 +43,10 @@ notion-cli ds query <data-source-id> \
 ### crates.io
 
 ```sh
-cargo install notion-cli
+cargo install notion-cli-mcp
 ```
+
+(The crate is published as `notion-cli-mcp`; the installed binary is `notion-cli`.)
 
 ### Prebuilt binaries (macOS / Linux, aarch64 + x86_64)
 
