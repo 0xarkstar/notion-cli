@@ -8,6 +8,7 @@ metadata:
     tags: [notion, mcp, cli, rust, productivity, database, wiki, agent-safety, data-source]
     requires:
       bins: [notion-cli]
+      env: [NOTION_TOKEN]
 ---
 
 # notion-cli-mcp
@@ -31,12 +32,12 @@ Agent-first Notion access via the `notion-cli` binary (Rust, MIT). A single tool
 
 ## Setup
 
-1. Install the binary (one of):
+1. Install the `notion-cli` binary from crates.io:
    ```bash
-   cargo install notion-cli-mcp                                 # from crates.io
-   curl -LsSf https://github.com/0xarkstar/notion-cli/releases/latest/download/notion-cli-installer.sh | sh
+   cargo install notion-cli-mcp
    ```
-2. Create an integration at <https://www.notion.so/my-integrations>, copy the Internal Integration Token (`ntn_...` or `secret_...`).
+   Other install channels (prebuilt binaries, Homebrew formula) are documented in the [project README](https://github.com/0xarkstar/notion-cli#installation) with SHA-256 checksums published per release.
+2. Create an integration at <https://www.notion.so/my-integrations> and copy the Internal Integration Token. Use the least-privilege scopes the workflow actually needs.
 3. Export it:
    ```bash
    export NOTION_TOKEN='ntn_...'
