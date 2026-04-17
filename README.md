@@ -8,13 +8,15 @@ An agent-first Notion CLI and MCP server, purpose-built for the Notion API 2025-
 
 ## Features
 
-- **7 tools** — query, search, get/create/update pages, get data sources, create data sources
+- **12 tools** — query, search, get/create/update pages, get/create data sources, full block CRUD (retrieve, list children, append, update, delete)
+- **Page body support** — `page create --children` for one-shot page + body creation
 - **CLI + MCP** — same tool surface accessible via shell commands or as an [MCP](https://modelcontextprotocol.io/) stdio server
 - **Agent-friendly output** — responses wrapped in an untrusted-source envelope with trust metadata; `--raw` for clean piping
 - **Rate limiting** — built-in 3 req/s token bucket with 429 `Retry-After` retry (configurable)
 - **Response size cap** — 10 MiB streaming limit prevents OOM on large payloads
-- **Schema introspection** — `notion-cli schema <type>` emits JSON Schema for all 22 property value types
+- **Schema introspection** — `notion-cli schema <type>` emits JSON Schema for 22 property value types, 12 block types, and more
 - **Read-only MCP default** — write tools require explicit `--allow-write`; write operations logged to JSONL audit trail
+- **Actionable error hints** — common Notion validation errors get one-line remediation suggestions
 - **Structured exit codes** — stable numeric codes (0/2/3/4/10/64/65/74) for scripting and CI
 - **Newtype ID validation** — accepts 32-hex, dashed UUID, or full Notion URLs; rejects homoglyphs and control characters
 - **`--check-request`** — validate and preview request payloads locally without contacting Notion
@@ -38,18 +40,28 @@ notion-cli ds query <data-source-id> \
 
 ## Installation
 
-### From source (recommended)
+### crates.io
+
+```sh
+cargo install notion-cli
+```
+
+### Prebuilt binaries (macOS / Linux, aarch64 + x86_64)
+
+```sh
+curl -LsSf https://github.com/0xarkstar/notion-cli/releases/latest/download/notion-cli-installer.sh | sh
+```
+
+### Homebrew
+
+```sh
+brew install 0xarkstar/tap/notion-cli
+```
+
+### From source
 
 ```sh
 cargo install --git https://github.com/0xarkstar/notion-cli
-```
-
-### Build locally
-
-```sh
-git clone https://github.com/0xarkstar/notion-cli.git
-cd notion-cli
-cargo install --path .
 ```
 
 Requires Rust 1.85+. Run `notion-cli --version` to verify.

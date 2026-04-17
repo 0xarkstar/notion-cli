@@ -1,5 +1,57 @@
 # Changelog
 
+## 0.2.0 — 2026-04-17
+
+Adds block CRUD — the missing piece for authoring page bodies — plus
+distribution infrastructure and actionable error hints.
+
+### Added
+
+- **Block CRUD (12 types)**: `paragraph`, `heading_1`/`_2`/`_3`,
+  `bulleted_list_item`, `numbered_list_item`, `to_do`, `toggle`,
+  `code`, `quote`, `callout`, `divider`. Same
+  `Block { Known | Raw }` pattern as `Property` — unknown block
+  types fall through to `Raw` preserving full JSON for read access.
+- **5 block endpoints**: `retrieve_block`, `list_block_children`
+  (paginated, cursor URL-encoded for safety), `append_block_children`,
+  `update_block`, `delete_block`.
+- **`page create --children`**: one-shot page creation with body, the
+  idiom Notion recommends.
+- **CLI verbs**: `notion-cli block {get, list, append, update, delete}`.
+- **MCP surface expanded**: read-only now exposes 6 tools
+  (4 → +`get_block`, `list_block_children`), `--allow-write`
+  exposes 12 tools (7 → +write block ops, audited).
+- **Actionable error hints**: `ApiError::Validation` now appends
+  one-line remediation for 6 common patterns (wiki data-source,
+  missing property, archived parent, type mismatch,
+  `object_not_found`, immutable block type).
+- **Distribution**: `cargo-dist` configured for 4 targets
+  (aarch64/x86_64 × macOS/Linux). GitHub Release on tag push
+  produces tarballs + Homebrew formula + shell installer.
+- **crates.io metadata**: repository/homepage/documentation URLs,
+  refined description, payload trimmed via `exclude`.
+
+### Changed
+
+- `CreatePageRequest` gains `children: Vec<BlockBody>` (default
+  empty, omitted on wire when empty).
+- MCP `CreatePageParams` gains optional `children: Option<Value>`.
+- `NotionClient::delete<T>()` added as a generic method.
+
+### Verification
+
+- 198 tests (up from 130): adds block roundtrip (17), block wiremock
+  (13), block handlers (7), block CLI (8), and various small cases.
+- `cargo clippy --all-targets -- -D warnings` clean.
+- Live-verified against a real Notion workspace — 10-step smoke
+  test including 7-block append, list, and delete.
+
+### Migration from 0.1.0
+
+No breaking changes at the wire level. If you construct
+`CreatePageRequest` directly in Rust code, add `children: vec![]` to
+the literal (or switch to struct update syntax).
+
 ## 0.1.0 — 2026-04-15
 
 First release. Replaces `@notionhq/notion-mcp-server` for Notion API
