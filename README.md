@@ -62,13 +62,13 @@ brew install 0xarkstar/tap/notion-cli
 
 ### ClawHub (for Hermes / OpenClaw agents)
 
-Published as the `notion-cli-mcp` skill on [ClawHub](https://clawhub.ai/0xarkstar/notion-cli-mcp):
+Published as [`notion-cli-mcp`](https://clawhub.ai/0xarkstar/notion-cli-mcp) on ClawHub:
 
 ```sh
-clawhub skill install 0xarkstar/notion-cli-mcp
+clawhub install 0xarkstar/notion-cli-mcp
 ```
 
-The skill describes the full tool surface and example payloads for agents.
+The skill describes the full tool surface and example payloads for agent consumption.
 
 ### From source
 

@@ -4,3 +4,6 @@
 {"t":0,"agent":"ab925c6","agent_type":"document-specialist","event":"agent_stop","success":true,"duration_ms":59592}
 {"t":0,"agent":"a3fc618","agent_type":"document-specialist","event":"agent_start","parent_mode":"none"}
 {"t":0,"agent":"a3fc618","agent_type":"document-specialist","event":"agent_stop","success":true,"duration_ms":84937}
+{"t":0,"agent":"system","event":"keyword_detected","keyword":"wiki"}
+{"t":0,"agent":"system","event":"keyword_detected","keyword":"wiki"}
+{"t":0,"agent":"system","event":"keyword_detected","keyword":"wiki"}
