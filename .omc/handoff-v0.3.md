@@ -1,117 +1,218 @@
-# notion-cli v0.3 handoff
+# notion-cli v0.3 handoff (revised post-audit)
 
-> Status: **planned, not started**. v0.2.0 shipped 2026-04-17; issue #1 filed 2026-04-20.
+> Status: **planned, pre-implementation audit complete (2026-04-22)**.
+> v0.2.0 shipped 2026-04-17; issue #1 filed 2026-04-20; audit folded in 2026-04-22.
 > Source of truth: https://github.com/0xarkstar/notion-cli/issues/1
+> Option **B** confirmed: 7 commands, single v0.3.0 release, ~10h work budget.
 
 ## Where we are
 
 - v0.2.0 live on: GitHub (tag + release binaries), crates.io (`notion-cli-mcp`), ClawHub (`0xarkstar/notion-cli-mcp` v1.1.0, Benign/high).
 - v0.2.0 covers **agent-facing runtime CRUD**: 22 property types, 12 block types, data-source model (API 2025-09-03+). 198 tests, 80.2% coverage, clippy clean.
 - BlueNode workspace bootstrap (1 Wiki + 9 operational DBs + 14 relations) hit the intentional v0.2 boundary: **admin lifecycle ops** (DB container creation, schema mutation, relation wiring) had to go direct against the Notion REST API.
-- v0.3 closes that gap. Safety model unchanged.
+- v0.3 closes that gap. Safety model reframed per audit (see D3).
 
-## Scope (issue #1)
+## Scope (issue #1, revised post-audit)
 
-| # | Command | Endpoint | Size | Priority |
-|---|---------|----------|------|----------|
-| 1 | `db create --parent-page <id> --title --icon --schema <file>` | `POST /v1/databases` (with `initial_data_source`) | M | top |
-| 2 | `ds update` (add/remove property, add select option, rename) | `PATCH /v1/data_sources/{id}` | M-L | high |
-| 3 | `ds add-relation --target --backlink \| --one-way` | convenience wrapper over #2 | S | high |
-| 4 | `page move --to-page \| --to-data-source` | `PATCH /v1/pages/{id}` | S | med |
-| 5 | `users list [--bot-only\|--human-only]`, `users get <id>` | `GET /v1/users`, `GET /v1/users/{id}` | S | med |
-| 6 | (optional) `comments list/create` | `GET/POST /v1/comments` | S | low |
-| 7 | (optional) `page icon/cover` — dedicated shortcuts | alias over `page update` | S | low |
+| # | Command | Endpoint | Size | Priority | MCP exposure |
+|---|---------|----------|------|----------|--------------|
+| 1 | `db create --parent-page <id> --title --icon --schema <file>` | `POST /v1/databases` (with `initial_data_source`) | M | top | `--allow-admin` |
+| 2 | `ds update --add-property / --remove-property / --add-option / --rename` (single-delta per call) | `PATCH /v1/data_sources/{id}` | M-L | high | `--allow-admin` |
+| 3 | `ds add-relation --target --backlink \| --one-way \| --self` | convenience wrapper over #2 | S | high | `--allow-admin` |
+| 4 | `page move --to-page \| --to-data-source` | `PATCH /v1/pages/{id}` (EXTENDS UpdatePageRequest — D12) | **M** (revised from S) | med | `--allow-admin` |
+| 5 | `users list [--bot-only \| --human-only]`, `users get <id>` | `GET /v1/users`, `GET /v1/users/{id}` | S | med | **CLI-only** (MCP deferred to v0.4) |
+| 6 | `comments list / create` | `GET/POST /v1/comments` | S | low | **CLI-only** (MCP deferred to v0.4) |
+| 7 | `page update --icon <emoji\|url> --cover <url>` (flags, NOT dedicated subcommand) | alias over existing `page update` | S | low | existing `page update` tier (`--allow-write`) |
 
-Non-goals (explicit): view management (API gap), `db delete` (use archive), workspace admin.
+Non-goals (explicit, unchanged): view management (API gap), `db delete` (use archive), workspace-level db parent, workspace admin.
 
-## Recommended implementation plan
+## Key decisions locked (from pre-implementation audit)
 
-**Option A — core 5 (commands 1–5), single v0.3.0 release** (~6–8h)
+### D1. `--confirm` two-mode semantics
+- **CLI**: destructive op prints structured diff, exits 0 without applying. To apply: re-invoke with `--yes`. When stdout is a TTY AND `--yes` absent, prompt interactively `(y/N)`. When non-TTY and `--yes` absent, exit 2.
+- **MCP**: destructive admin tools take explicit `confirm: bool` param (must be `true`). ALSO gate on env var `NOTION_CLI_ADMIN_CONFIRMED=1` — two factors. Agent config alone cannot mutate schema without both present.
+- Rationale: resolves the CLI-vs-MCP contradiction that crashed naive "interactive confirm" plan. Agents use explicit-flag path; humans get tty prompt safety net.
 
-Covers the full BlueNode bootstrap scenario. Options 6–7 defer to v0.3.1+.
+### D2. `ds update` atomicity — single-delta default
+- Default: CLI accepts **one property change per invocation** (rejects multi-delta). Sequential execution through the 3 req/s limiter; stop on first failure; print progress.
+- Escape hatch: `--bulk` flag sends multi-delta PATCH — caller accepts non-atomic mid-state on partial failure.
+- Library API `data_source::update_data_source(id, req)` remains multi-delta capable for advanced consumers.
+- Rationale: Notion PATCH is not transactional; partial failure leaves schema in mixed state with no rollback primitive. Sequential-by-default trades latency for auditability.
 
-**Option B — A + optional 2** (~10h)
+### D3. `--allow-admin` threat model (REFRAME — NOT a sandbox)
+- `--allow-admin` is **tool-exposure policy**, NOT a security boundary. An agent with admin integration token + code execution can call `POST /v1/databases` via curl regardless of MCP gating.
+- What it DOES do:
+  1. **Prompt-injection attenuation**: admin tools not in agent's tool menu → excluded from agent's planning surface.
+  2. **Accidental-action prevention**: default Hermes profiles have no admin tools → operator cannot fat-finger schema changes through a read/write-only agent.
+- SKILL.md must state this explicitly ("least-privilege default for agent tool menus"). Do NOT imply sandbox-against-hostile-agent.
 
-Seals the admin surface completely.
+### D4. `PropertySchema` distinct from `PropertyValue`
+- New file `src/types/property_schema.rs`. Mirror the proven pattern: `PropertySchema::Known(PropertySchemaKind)` with `#[serde(tag = "type")]`, wrapped by `Schema { Known | Raw }` untagged outer for graceful degradation.
+- Share **only leaves** (`SelectOption`, `StatusOption` from `src/types/common.rs`).
+- Each variant carries a configuration struct (e.g. `SelectSchema { options: Vec<SelectOption> }`, `RelationSchema { data_source_id: DataSourceId, relation_type: RelationType }`).
+- **Breaking change**: `DataSource.properties` and `Database.properties` migrate from `HashMap<String, serde_json::Value>` to `HashMap<String, Schema>`. Note in CHANGELOG under BREAKING. Pre-1.0 semver permits.
+- MCP tool params stay `serde_json::Value` with example-rich descriptions (v0.2 lesson on schemars deep-recursion — agents parse prose better than recursive `$ref`).
+- Proptest roundtrip mandatory: per-variant serialize + deserialize lossless.
 
-**Option C — phased incremental** (v0.3.0 = 1+2+3, v0.3.1 = 4+5, v0.3.2 = 6+7)
+### D5. MCP three-tier module split
+- Three files, three `#[tool_router]` impls, one shared `src/mcp/handlers.rs` module for bodies.
+  - `src/mcp/server_ro.rs` — `NotionReadOnly` (6 tools, unchanged from v0.2)
+  - `src/mcp/server_write.rs` — `NotionWrite` (12 tools: v0.2's 12 runtime tools, unchanged)
+  - `src/mcp/server_admin.rs` — `NotionAdmin` (12 + 5 admin = 17 tools: `db create`, `ds update`, `ds add-relation`, `page move`, `page update` with admin flag. Users/comments CLI-only.)
+- Module boundary is the invariant. An admin-only tool accidentally added to `NotionWrite` should ideally fail compilation; at minimum be caught by D13 snapshot.
 
-Ship-early path if the Phase 2–4 bootstrap use case is most urgent.
+### D6. Audit log — two env vars (separate files)
+- `NOTION_CLI_AUDIT_LOG` — runtime writes (v0.2 behaviour, unchanged).
+- `NOTION_CLI_ADMIN_LOG` — admin ops (new, higher-privilege).
+- Rationale: operator can grep-split agent activity vs structural mutation without jq filters; different retention/rotation policies possible.
+- Both declared in `clawhub/SKILL.md` `metadata.openclaw.requires.env` (per ClawHub pre-publish checklist below).
 
-Default recommendation: **Option A**.
+### D7. `ds add-relation` — minimal pre-flight, explicit flag choice
+- Pre-flight: single GET on target DS. Verify (exists, not a wiki container, shared with integration). Map errors to targeted hints. No graph traversal, no backlink name uniqueness inference.
+- Flag choice must be explicit: exactly one of `--backlink <name>` / `--one-way` / `--self`. No silent default.
+- `--self` required when `<source_ds> == <target_ds>` (surface intent; self-relations are unusual — avoid typo footgun).
+- Uses `data_source_id` exclusively (NOT `database_id` — forward-compat trap on API 2025-09-03+).
 
-## Design considerations — carry-over from v0.1/v0.2
+### D8. `db create` parent = page only (no workspace)
+- `CreateDatabaseParent` enum = `Page { page_id: PageId }` only for v0.3.
+- Workspace-parent requires OAuth user tokens that integration tokens lack. Shipping it produces opaque 400s.
+- Add when/if OAuth token support lands in v0.4+.
+- Validate locally via `--check-request`: parent is `PageId`, at least one property is `Title`-typed, property names unique.
 
-1. **Admin vs runtime separation**. MCP tool exposure was designed for agent CRUD; admin ops (esp. schema mutation) should **not** be exposed over MCP by default — agents pairing with Hermes shouldn't be able to drop a property. Gate admin tools behind an additional flag (e.g. `--allow-admin`, stricter than `--allow-write`). Keep MCP read-only default untouched.
+### D9. `users list` auto-paginate, CLI-only
+- Default: walk cursors until exhausted, `page_size=100` (API max).
+- Flags: `--limit <n>` (client-side cap), `--bot-only` / `--human-only` (client-side filter on `type`), `--cursor <c>` (manual escape hatch).
+- **CLI-only in v0.3** (NOT exposed over MCP). Reduces PII-exfil surface and ClawHub scanner load.
+- Reconsider MCP exposure in v0.4 only if a real agent use-case emerges.
 
-2. **Destructive confirmation at CLI**. Every property removal, data-source/database rename, page move into an ancestor, or move-to-trash must require `--confirm` (print diff, require explicit yes). Dry-run still available via `--check-request`.
+### D10. `comments` CLI verb shape, CLI-only
+- `comments list --on-page <id> | --on-block <id>` — exactly one parent (mutually exclusive).
+- `comments create --on-page <id> | --on-block <id> | --in-discussion <id> --text "<body>"` — exactly one parent.
+- **CLI-only in v0.3** (NOT exposed over MCP). If MCP demand emerges in v0.4, add a separate slower rate-limit bucket (e.g. 1/5s) for comment creation at that time.
+- Do NOT invent a fake "reply-to comment id" — Notion's model is discussion-based, not reply-hierarchy.
 
-3. **Property schema modelling — same Property pattern**. Property *schemas* (what `ds update --add-property` sends) are a different shape than property *values* (what `page create` sends):
-   - Schema: `{"Priority": {"select": {"options": [{"name":"긴급"}, ...]}}}`
-   - Value: `{"Priority": {"select": {"name": "긴급"}}}`
-   - Both live in the same `properties` field on the wire depending on endpoint. Model as distinct Rust types to keep compile-time separation.
+### D11. `page icon/cover` — flags on `page update`, no dedicated subcommand
+- Extend `UpdatePageRequest` with `icon: Option<Icon>`, `cover: Option<Cover>` (and `parent: Option<PageParent>` per D12).
+- `--icon <emoji|url>` parse rule: `http(s)://` prefix → `external { url }`; else emoji → `{ type: "emoji", emoji: "<v>" }`.
+- `--cover <url>` only (Notion covers are URL-only).
+- Clearing: `--icon none` / `--cover none` → sends `null` in body.
+- One shared helper in `api/page.rs` routes the flags AND any future dedicated shortcut — divergence risk ≈ 0.
 
-4. **Schema diff output**. `ds update` should print a structured diff before applying:
-   ```
-   ~ Tags (multi_select):
-     + 아카이브
-     + 검토필요
-   + Priority (select, new): 긴급, 높음, 보통
-   - old_field (removed)
-   ```
+### D12. `page move` (HANDOFF BUG FIX from v1)
+- The previous handoff claimed `update_page` already supported `parent` patch. **This was factually wrong.** `UpdatePageRequest` at `src/api/page.rs:46-53` has no `parent` field today.
+- Required work: extend `UpdatePageRequest` with `parent: Option<PageParent>`; add `MoveTarget { ToPage(PageId), ToDataSource(DataSourceId) }` enum; plumb through CLI + MCP admin tier; wiremock both branches.
+- **Size revised: S → M.**
+- **Pre-implementation smoke test (BLOCKER)**: verify Notion API 2026-03-11 actually accepts `parent` on `PATCH /v1/pages/{id}`. Post-data-source migration, parent semantics changed and docs are ambiguous. If API rejects → escalate: alternate approach (unarchive-at-new-parent?) or drop `page move` from v0.3. Budget 30 min before any code.
 
-5. **Relation wiring — the hand-crafted pain point**. `ds add-relation` must generate correct `dual_property` or `synced_property_name` with target `data_source_id`. Notion rejects relation creation if the target DS is in a different workspace or not shared with the integration — surface that as a specific error hint.
+### D13. MCP tool-list snapshot regression test
+- `tests/mcp_server_snapshot.rs` — start server in each tier, assert `tools/list` returns exactly the expected tool names/order:
+  - no-flag → 6 tools (v0.2 RO baseline)
+  - `--allow-write` → 12 tools (v0.2 runtime baseline, byte-for-byte)
+  - `--allow-admin` → 17 tools (v0.2's 12 + 5 new admin tools)
+- Trips on any accidental cross-tier addition. Invariant test, not a unit test. Defends the D5 module boundary from reviewer error.
 
-## Testing strategy (mirror v0.2 pattern)
+## ClawHub pre-publish checklist
 
-- **Unit**: property schema roundtrip (proptest), diff formatting snapshot
-- **wiremock**: all 5–7 new endpoints (200/400/404/429), parent-page-not-found → object_not_found hint
-- **CLI assert_cmd**: --check-request coverage of every new subcommand
-- **Live smoke** (extend `examples/smoke.rs`): create a test DB with 2 properties, add a relation to an existing DS, move a page, remove a property, verify diff
-- **MCP**: admin tools gated behind --allow-admin; verify they are NOT in tools/list without it
+- **Dry-run SKILL.md v2.0** against OpenClaw rules BEFORE publishing (copy to scratch slug if needed).
+- SKILL.md structural split:
+  - "Agent tools (MCP)" section lists ONLY read + runtime-write tools
+  - "Operator CLI" section describes admin ops with explicit "not available over MCP by default; opt-in per deployment via `--allow-admin`" preamble
+- `metadata.openclaw.requires.env`: `NOTION_TOKEN`, `NOTION_CLI_AUDIT_LOG`, `NOTION_CLI_ADMIN_LOG`.
+- `metadata.openclaw.capabilities`: declare admin tier explicitly.
+- Budget **one iteration** (Suspicious → Benign) into release timeline. Not exceptional — expected.
 
-Target: add ~40–60 tests on top of v0.2's 198, maintain 80%+ line coverage.
+## Testing strategy (revised +70-90 tests, up from +40-60)
 
-## Distribution checklist (unchanged from v0.2)
+Scope revised up after audit. 7 commands × richer state (diff preview, confirm logic, 3-tier gating) demand more coverage.
+
+- **Unit**: property schema roundtrip (proptest, per variant), diff formatting snapshot, icon/cover parse rules, `--check-request` structural validation
+- **wiremock**: all 7 new endpoints (200/400/404/429), parent-page-not-found → `object_not_found` hint, relation-target-not-shared hint, wiki-parent-for-relation hint, `synced_property_name` collision hint
+- **CLI assert_cmd**: `--check-request` coverage of every new subcommand, TTY vs non-TTY confirm paths, `--yes` gating (exit 2 when missing in non-TTY), `--bulk` gating (exit 3 on partial failure)
+- **Live smoke** (extend `examples/smoke.rs`): create a test DB with 2 properties, add a relation to an existing DS (dual-property), move a page (dual-branch: to-page AND to-data-source), remove a property, verify diff output
+- **MCP snapshot (D13)**: byte-compare tool-list JSON per tier
+- **MCP gating**: admin tools NOT in `tools/list` without `--allow-admin`; admin tool call WITHOUT `confirm: true` + `NOTION_CLI_ADMIN_CONFIRMED=1` returns error (D1 invariant)
+- **Partial-failure**: `ds update --bulk` with forced mid-response failure → exit 3 + structured report listing applied-vs-failed deltas
+
+Target: +70-90 tests on v0.2's 198 → ~270-290 total. Maintain 80%+ line coverage.
+
+## Distribution checklist
 
 1. Bump Cargo.toml: 0.2.0 → 0.3.0
-2. Update CHANGELOG with new commands
-3. Update README features list (12 → 17 or 19 tools)
+2. Update CHANGELOG with:
+   - **BREAKING**: `DataSource.properties` and `Database.properties` type migration (D4)
+   - New commands (1-7 above)
+   - New env vars (`NOTION_CLI_ADMIN_LOG`, `NOTION_CLI_ADMIN_CONFIRMED`)
+   - New MCP flag tier (`--allow-admin`)
+3. Update README features list (12 → 17 MCP tools, CLI gains 7 admin subcommands)
 4. Tag v0.3.0 → cargo-dist rebuilds 4-platform binaries (~6 min)
 5. `cargo publish` to crates.io
-6. `clawhub publish ./clawhub --version 2.0.0 ...` (major-bump since SKILL.md gains admin section)
+6. `clawhub publish ./clawhub --version 2.0.0 ...` (major bump; admin section added). Expect one Suspicious→Benign iteration per ClawHub checklist above.
 
 ## Open questions for implementer
 
-1. Should admin ops also get an audit log (JSONL), same path as writes? Suggest **yes** — these are higher-privilege than regular writes.
-2. Should `ds update` accept a full schema JSON file for idempotent "reconciliation" mode? (Advanced; defer to v0.4 if feature creep.)
-3. ClawHub SKILL.md update — new admin section should explicitly note `--allow-admin` is agent-hostile default-off. Scanner may flag admin ops as higher-privilege; expect to iterate to Benign again.
+1. **D12 smoke test (BLOCKER)**: does Notion API 2026-03-11 accept `parent` on `PATCH /v1/pages/{id}`? Confirm before coding #4.
+2. Separate binary `notion-cli-admin`? Would simplify ClawHub scanner story (no admin vocabulary in the public CLI SKILL). **Defer post-v0.3** — revisit only if ClawHub iteration proves painful.
+3. `--reconcile` mode for `ds update` (whole-schema JSON reconciliation): **defer to v0.4+**.
+4. `ds update --bulk` partial-failure exit code: `3` with structured report (this plan's default), or `2` + separate `--continue-on-error` flag? Pick at implementation time, document in CHANGELOG.
 
-## Pre-implementation audit (recommended, per v0.2 pattern)
+## Pre-implementation audit (DONE 2026-04-22)
 
-Before writing code, spawn 1-2 parallel audit agents (architect + critic) to stress-test:
-- Property schema Rust modelling (distinct from PropertyValue)
-- `ds update` atomicity (Notion API is not transactional — partial failures possible on multi-change calls)
-- `db create` parent-shape edge cases (page vs database parent; workspace_id only for admin)
-- `ds add-relation` one-way vs dual vs self-referential
+Architect + critic ran in parallel. Key findings folded into D1-D13 above. Original audit outputs archived in session transcript (agents `aa6bfb68989e007f4` and `aaf079d98d42a785c`).
 
-Follow the audit → synthesize → implement → review → live → release flow proven on v0.2.
+**Must-fix items all addressed in this revision:**
+- ~~Handoff line 103 file pointer bug~~ → fixed in D12
+- ~~`--confirm` CLI-vs-MCP contradiction~~ → resolved in D1
+- ~~`ds update` non-atomicity unmitigated~~ → resolved in D2
+- ~~`--allow-admin` framed as security sandbox~~ → reframed in D3 as tool-exposure policy
+- ~~`users list` / `comments create` MCP exposure~~ → deferred to v0.4 in D9/D10
+- ~~MCP regression risk~~ → snapshot test in D13
+- ~~Test budget 40-60 too tight~~ → raised to 70-90
+- ~~ClawHub pre-publish optimism~~ → explicit checklist added
 
-## File pointers
+## File pointers (corrected)
 
-- `src/api/data_source.rs` — extend with `update_data_source(id, req)` + schema types
-- `src/api/database.rs` — add `create_database(req)`
-- `src/api/page.rs` — `update_page` already supports `parent` patch; thin CLI layer
-- `src/cli/ds.rs`, `src/cli/db.rs`, `src/cli/page.rs` — new subcommands
-- `src/api/user.rs` — new module
-- `src/mcp/*` — conditional admin tools (skip in read-only and --allow-write modes unless --allow-admin)
+- `src/types/property_schema.rs` — **NEW** (D4)
+- `src/types/data_source.rs` — update `properties: HashMap<String, serde_json::Value>` → `HashMap<String, Schema>` (D4, BREAKING)
+- `src/types/database.rs` — same (D4)
+- `src/api/data_source.rs` — extend with `update_data_source(id, req)` + single-delta shape + `--bulk` (D2)
+- `src/api/database.rs` — add `create_database(req)` with typed `PropertySchema` (D4, D8)
+- `src/api/page.rs:46-53` — **EXTEND `UpdatePageRequest`** with `parent: Option<PageParent>`, `icon: Option<Icon>`, `cover: Option<Cover>` (D11, D12). Previously WRONG claim: "already supported."
+- `src/api/user.rs` — **NEW** (D9, CLI-only plumbing)
+- `src/api/comment.rs` — **NEW** (D10, CLI-only plumbing)
+- `src/api/error.rs:54-106` — extend validation-hint registry (relation-target-not-shared, wiki-parent-for-relation, synced_property_name collision, parent-page-not-found for `db create`)
+- `src/cli/db.rs`, `src/cli/ds.rs`, `src/cli/page.rs`, `src/cli/user.rs`, `src/cli/comment.rs` — new subcommands
+- `src/mcp/server_ro.rs` / `server_write.rs` / `server_admin.rs` — three-file split (D5)
+- `src/mcp/handlers.rs` — shared handler bodies (D5)
+- `src/mcp/audit.rs` — add `NOTION_CLI_ADMIN_LOG` sink alongside existing write log (D6)
+- `clawhub/SKILL.md` — restructure into agent-tools / operator-CLI sections per D3 + D11 + checklist
+- `tests/mcp_server_snapshot.rs` — **NEW** (D13)
+- `tests/property_schema_roundtrip.rs` — **NEW** (D4 proptest)
+
+## Implementation order (strict)
+
+1. **D12 smoke test (BLOCKER, ~30 min)** — verify `PATCH /v1/pages/{id}` accepts `parent` on current API. Gate on pass before proceeding.
+2. **Type foundation (D4)** — `PropertySchema` enum + `Schema { Known | Raw }` wrapper + proptest roundtrip. Migrate `DataSource.properties` / `Database.properties`. Verify v0.2 read shape still deserialises via `Raw` fallback.
+3. **MCP three-file split (D5)** — refactor BEFORE adding any new tool. D13 snapshot test as safety net confirming v0.2 surface unchanged.
+4. **`db create` (#1)** — exercises PropertySchema write path first.
+5. **`ds update` single-delta (D2, #2)** — four subcommands: add-property, remove-property, add-option, rename.
+6. **`ds add-relation` (#3)** — convenience over #2.
+7. **Extend `UpdatePageRequest` (D11, D12)** — `icon`, `cover`, `parent` fields.
+8. **`page update --icon/--cover` (#7)** — flags on existing update.
+9. **`page move` (#4)** — admin-tier wrapper, both `--to-page` and `--to-data-source` branches.
+10. **`users list/get` (#5)** — CLI-only, no MCP plumbing.
+11. **`comments list/create` (#6)** — CLI-only, no MCP plumbing.
+12. **Destructive confirm (D1)** — retrofit to #2 (remove-property, rename), #4 (to-trash path if any). MCP param + env-var gating.
+13. **ClawHub SKILL.md restructure + dry-run (D3, ClawHub checklist)**.
+14. **Release** — v0.3.0 + ClawHub v2.0 + CHANGELOG BREAKING note.
 
 ## When done
 
 - Close issue #1
-- Update memory `cli-development-patterns.md` with admin-ops lessons (esp. schema-value type split)
-- Add Obsidian inbox note only if new reusable patterns emerged
+- Update memory `cli-development-patterns.md` with admin-ops lessons (esp. PropertySchema, 3-tier module split, two-mode confirm)
+- Add Obsidian Patterns/ note: `cli-agent-admin-three-tier.md` (per `~/Obsidian/Dev/Inbox/notion-cli-admin-vs-agent-boundary-2026-04-22.md` extraction pointer)
+- Add Obsidian inbox note only if new reusable patterns emerged beyond what audit captured
 
 ---
 
-Drafted 2026-04-22 at end of v0.2 post-release session.
+Drafted 2026-04-22 end of v0.2 post-release session.
+Revised 2026-04-22 post-audit (architect + critic parallel, 13 decisions locked).
