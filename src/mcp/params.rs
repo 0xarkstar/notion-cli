@@ -121,6 +121,48 @@ pub struct CreateDataSourceParams {
 // === Admin tier params ====================================================
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct DsUpdateParams {
+    /// Data source ID or URL.
+    pub data_source_id: String,
+    /// Operation to perform. One of:
+    /// `add_property`, `remove_property`, `rename_property`,
+    /// `add_option`, `bulk`.
+    ///
+    /// - `add_property` needs: `name`, `schema`.
+    /// - `remove_property` needs: `name`, `confirm=true`, AND
+    ///   `NOTION_CLI_ADMIN_CONFIRMED=1` env (D1 two-factor gate).
+    /// - `rename_property` needs: `name` (old), `new_name`.
+    /// - `add_option` needs: `property`, `kind`
+    ///   (select|multi_select|status), `option` (object with `name`
+    ///   and optional `color`).
+    /// - `bulk` needs: `body` (full `UpdateDataSourceRequest` JSON).
+    ///   Non-atomic — caller accepts partial failure.
+    pub action: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub new_name: Option<String>,
+    /// Property schema body (shape: `PropertySchema` JSON).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schema: Option<serde_json::Value>,
+    /// Target property name for `add_option`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub property: Option<String>,
+    /// Property kind for `add_option`: `select`, `multi_select`, `status`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    /// Option body for `add_option` (object with `name`, optional `color`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub option: Option<serde_json::Value>,
+    /// Full bulk body for `bulk` action.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body: Option<serde_json::Value>,
+    /// Two-factor gate bit for destructive actions (D1).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub confirm: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct DbCreateParams {
     /// Parent page ID (32-hex or dashed, or a page URL). Must be a
     /// regular page — databases cannot parent other databases.

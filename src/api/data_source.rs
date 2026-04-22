@@ -16,8 +16,10 @@ use serde::{Deserialize, Serialize};
 use crate::api::client::NotionClient;
 use crate::api::error::ApiError;
 use crate::api::pagination::PaginatedResponse;
+use crate::types::common::SelectOption;
 use crate::types::page::Page;
 use crate::types::property::PropertyValue;
+use crate::types::property_schema::PropertySchema;
 use crate::types::rich_text::RichText;
 use crate::types::sort::SortCriterion;
 use crate::types::{DataSource, DatabaseParentRef};
@@ -44,6 +46,136 @@ pub struct CreateDataSourceRequest {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub title: Vec<RichText>,
     pub properties: serde_json::Value,
+}
+
+/// Kinds of property that support an option list and hence
+/// `ds update add-option`. Notion merges options by name on PATCH —
+/// existing options are preserved.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum SelectKind {
+    Select,
+    MultiSelect,
+    Status,
+}
+
+impl SelectKind {
+    #[must_use]
+    pub fn wire_key(self) -> &'static str {
+        match self {
+            Self::Select => "select",
+            Self::MultiSelect => "multi_select",
+            Self::Status => "status",
+        }
+    }
+
+    /// Parse the wire discriminator (`select`, `multi_select`, `status`).
+    pub fn parse(s: &str) -> Result<Self, String> {
+        match s {
+            "select" => Ok(Self::Select),
+            "multi_select" => Ok(Self::MultiSelect),
+            "status" => Ok(Self::Status),
+            other => Err(format!(
+                "unknown option-capable kind '{other}' (expected select, multi_select, status)"
+            )),
+        }
+    }
+}
+
+/// Body for `PATCH /v1/data_sources/{id}`.
+///
+/// `properties` is a map of property-name → delta. A delta can be:
+/// - full `PropertySchema` JSON — add or redefine the property
+/// - `{"name": "NewName"}` — rename the property
+/// - JSON `null` — remove the property
+/// - `{"<kind>": {"options": [...]}}` — append options to a select
+///   (Notion merges by name, existing options preserved)
+///
+/// The CLI/MCP surface enforces one-delta-per-invocation by default
+/// (D2); the library API below is multi-delta capable for advanced
+/// consumers that accept the non-atomic semantics.
+#[derive(Debug, Clone, Serialize, JsonSchema, Default)]
+pub struct UpdateDataSourceRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<Vec<RichText>>,
+    #[serde(default, skip_serializing_if = "serde_json::Map::is_empty")]
+    pub properties: serde_json::Map<String, serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub archived: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub in_trash: Option<bool>,
+}
+
+impl UpdateDataSourceRequest {
+    /// Single-delta: add a new property to the schema.
+    pub fn add_property(
+        name: &str,
+        schema: &PropertySchema,
+    ) -> Result<Self, serde_json::Error> {
+        let mut props = serde_json::Map::new();
+        props.insert(name.to_string(), serde_json::to_value(schema)?);
+        Ok(Self { properties: props, ..Default::default() })
+    }
+
+    /// Single-delta: remove a property (Notion PATCH accepts `null`
+    /// as the tombstone value).
+    #[must_use]
+    pub fn remove_property(name: &str) -> Self {
+        let mut props = serde_json::Map::new();
+        props.insert(name.to_string(), serde_json::Value::Null);
+        Self { properties: props, ..Default::default() }
+    }
+
+    /// Single-delta: rename a property.
+    /// Wire shape: `{"OldName": {"name": "NewName"}}`.
+    #[must_use]
+    pub fn rename_property(old: &str, new: &str) -> Self {
+        let mut props = serde_json::Map::new();
+        props.insert(
+            old.to_string(),
+            serde_json::json!({"name": new}),
+        );
+        Self { properties: props, ..Default::default() }
+    }
+
+    /// Single-delta: append an option to a select / multi-select /
+    /// status property. Notion merges by option name — pre-existing
+    /// options are preserved.
+    #[must_use]
+    pub fn add_option(prop_name: &str, kind: SelectKind, option: SelectOption) -> Self {
+        let mut props = serde_json::Map::new();
+        let key = kind.wire_key();
+        let body = serde_json::json!({
+            "type": key,
+            key: { "options": [option] }
+        });
+        props.insert(prop_name.to_string(), body);
+        Self { properties: props, ..Default::default() }
+    }
+
+    /// Escape hatch (`--bulk`): take a caller-supplied JSON body
+    /// verbatim. Caller accepts non-atomic semantics (partial-failure
+    /// leaves schema mid-state per D2).
+    pub fn from_bulk(body: serde_json::Value) -> Result<Self, String> {
+        let obj = body
+            .as_object()
+            .ok_or_else(|| "bulk body must be a JSON object".to_string())?;
+        let mut req = Self::default();
+        if let Some(t) = obj.get("title").cloned() {
+            req.title = Some(
+                serde_json::from_value(t).map_err(|e| format!("title: {e}"))?,
+            );
+        }
+        if let Some(p) = obj.get("properties").and_then(|v| v.as_object()) {
+            req.properties = p.clone();
+        }
+        if let Some(a) = obj.get("archived").and_then(|v| v.as_bool()) {
+            req.archived = Some(a);
+        }
+        if let Some(t) = obj.get("in_trash").and_then(|v| v.as_bool()) {
+            req.in_trash = Some(t);
+        }
+        Ok(req)
+    }
 }
 
 /// Request body for `POST /v1/data_sources/{id}/query`.
@@ -88,6 +220,20 @@ impl NotionClient {
         req: &QueryDataSourceRequest,
     ) -> Result<PaginatedResponse<Page>, ApiError> {
         self.post(&format!("/data_sources/{id}/query"), req).await
+    }
+
+    /// `PATCH /v1/data_sources/{id}` — mutate schema.
+    ///
+    /// Notion is non-transactional across multi-property deltas; CLI
+    /// surface enforces single-property per invocation by default
+    /// (D2). Library callers that opt into multi-delta accept the
+    /// partial-failure semantics.
+    pub async fn update_data_source(
+        &self,
+        id: &DataSourceId,
+        req: &UpdateDataSourceRequest,
+    ) -> Result<DataSource, ApiError> {
+        self.patch(&format!("/data_sources/{id}"), req).await
     }
 }
 

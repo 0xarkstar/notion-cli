@@ -243,6 +243,146 @@ fn db_create_with_emoji_icon_parses_to_emoji_shape() {
     let _ = std::fs::remove_file(schema_path);
 }
 
+// === ds update (v0.3 admin) ==============================================
+
+#[test]
+fn ds_update_add_property_check_request_patches_data_source_path() {
+    let assert = cli()
+        .args([
+            "--check-request",
+            "--raw",
+            "ds",
+            "update",
+            "add-property",
+            VALID_ID,
+            "--name",
+            "Priority",
+            "--schema",
+            r#"{"type":"select","select":{"options":[{"name":"High"}]}}"#,
+        ])
+        .assert()
+        .success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let parsed: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    assert_eq!(parsed.get("method").and_then(|v| v.as_str()), Some("PATCH"));
+    let path = parsed.get("path").and_then(|v| v.as_str()).unwrap_or("");
+    assert!(
+        path.starts_with("/v1/data_sources/") && path.len() > "/v1/data_sources/".len(),
+        "expected /v1/data_sources/{{id}} path, got {path}"
+    );
+    let prop_type = parsed
+        .pointer("/body/properties/Priority/type")
+        .and_then(|v| v.as_str());
+    assert_eq!(prop_type, Some("select"));
+}
+
+#[test]
+fn ds_update_remove_property_without_yes_exits_64() {
+    // Remove-property is destructive; --yes is required at the CLI
+    // surface when not running in a TTY (D1). assert_cmd never has
+    // a TTY, so absence of --yes must trip the usage guard.
+    let assert = cli()
+        .args([
+            "--check-request",
+            "ds",
+            "update",
+            "remove-property",
+            VALID_ID,
+            "--name",
+            "Doomed",
+        ])
+        .assert()
+        .failure();
+    assert_eq!(assert.get_output().status.code(), Some(64));
+    let err = String::from_utf8_lossy(&assert.get_output().stderr);
+    assert!(
+        err.to_lowercase().contains("destructive") || err.to_lowercase().contains("--yes"),
+        "expected destructive/--yes hint in stderr: {err}"
+    );
+}
+
+#[test]
+fn ds_update_remove_property_with_yes_sends_null() {
+    let assert = cli()
+        .args([
+            "--check-request",
+            "--raw",
+            "ds",
+            "update",
+            "remove-property",
+            VALID_ID,
+            "--name",
+            "Doomed",
+            "--yes",
+        ])
+        .assert()
+        .success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let parsed: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    let doomed = parsed.pointer("/body/properties/Doomed");
+    assert_eq!(
+        doomed,
+        Some(&serde_json::Value::Null),
+        "remove-property must emit null for the doomed key"
+    );
+}
+
+#[test]
+fn ds_update_rename_property_sends_name_directive() {
+    let assert = cli()
+        .args([
+            "--check-request",
+            "--raw",
+            "ds",
+            "update",
+            "rename-property",
+            VALID_ID,
+            "--from",
+            "Old",
+            "--to",
+            "New",
+        ])
+        .assert()
+        .success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let parsed: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    let new_name = parsed
+        .pointer("/body/properties/Old/name")
+        .and_then(|v| v.as_str());
+    assert_eq!(new_name, Some("New"));
+}
+
+#[test]
+fn ds_update_add_option_emits_merge_delta() {
+    let assert = cli()
+        .args([
+            "--check-request",
+            "--raw",
+            "ds",
+            "update",
+            "add-option",
+            VALID_ID,
+            "--property",
+            "Priority",
+            "--name",
+            "Urgent",
+            "--color",
+            "red",
+        ])
+        .assert()
+        .success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let parsed: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    let first_opt = parsed
+        .pointer("/body/properties/Priority/select/options/0/name")
+        .and_then(|v| v.as_str());
+    assert_eq!(first_opt, Some("Urgent"));
+    let first_color = parsed
+        .pointer("/body/properties/Priority/select/options/0/color")
+        .and_then(|v| v.as_str());
+    assert_eq!(first_color, Some("red"));
+}
+
 #[test]
 fn db_create_with_url_icon_parses_to_external_shape() {
     let schema_path = write_temp_schema(

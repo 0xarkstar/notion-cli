@@ -135,14 +135,26 @@
   "hotPaths": [
     {
       "path": "src/mcp/handlers.rs",
-      "accessCount": 5,
-      "lastAccessed": 1776861768570,
+      "accessCount": 8,
+      "lastAccessed": 1776864379853,
       "type": "file"
     },
     {
       "path": "tests/api_mock.rs",
+      "accessCount": 7,
+      "lastAccessed": 1776864453340,
+      "type": "file"
+    },
+    {
+      "path": "src/api/data_source.rs",
+      "accessCount": 6,
+      "lastAccessed": 1776864286917,
+      "type": "file"
+    },
+    {
+      "path": "src/mcp/server_admin.rs",
       "accessCount": 5,
-      "lastAccessed": 1776861919761,
+      "lastAccessed": 1776864391669,
       "type": "file"
     },
     {
@@ -161,6 +173,24 @@
       "path": "src/cli/db.rs",
       "accessCount": 4,
       "lastAccessed": 1776861786771,
+      "type": "file"
+    },
+    {
+      "path": "src/cli/ds.rs",
+      "accessCount": 4,
+      "lastAccessed": 1776864341087,
+      "type": "file"
+    },
+    {
+      "path": "src/mcp/params.rs",
+      "accessCount": 4,
+      "lastAccessed": 1776864359193,
+      "type": "file"
+    },
+    {
+      "path": "tests/mcp_server.rs",
+      "accessCount": 4,
+      "lastAccessed": 1776864402571,
       "type": "file"
     },
     {
@@ -200,12 +230,6 @@
       "type": "file"
     },
     {
-      "path": "src/api/data_source.rs",
-      "accessCount": 3,
-      "lastAccessed": 1776861568353,
-      "type": "file"
-    },
-    {
       "path": "src/cli/page.rs",
       "accessCount": 3,
       "lastAccessed": 1776861638579,
@@ -218,27 +242,9 @@
       "type": "file"
     },
     {
-      "path": "src/mcp/params.rs",
+      "path": "tests/cli.rs",
       "accessCount": 3,
-      "lastAccessed": 1776861750200,
-      "type": "file"
-    },
-    {
-      "path": "src/mcp/server_admin.rs",
-      "accessCount": 3,
-      "lastAccessed": 1776861798724,
-      "type": "file"
-    },
-    {
-      "path": "tests/mcp_server.rs",
-      "accessCount": 3,
-      "lastAccessed": 1776861815139,
-      "type": "file"
-    },
-    {
-      "path": "src/cli/ds.rs",
-      "accessCount": 2,
-      "lastAccessed": 1776852049947,
+      "lastAccessed": 1776864482564,
       "type": "file"
     },
     {
@@ -281,12 +287,6 @@
       "path": "src/cli/error.rs",
       "accessCount": 2,
       "lastAccessed": 1776861774871,
-      "type": "file"
-    },
-    {
-      "path": "tests/cli.rs",
-      "accessCount": 2,
-      "lastAccessed": 1776861955736,
       "type": "file"
     },
     {

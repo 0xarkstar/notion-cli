@@ -1,16 +1,22 @@
-//! `notion-cli ds *` — data source commands (query, create, retrieve).
+//! `notion-cli ds *` — data source commands (query, create, retrieve, update).
 //!
 //! `ds create` is the-bug endpoint — what the upstream
 //! `@notionhq/notion-mcp-server` gets wrong on API 2025-09-03+.
+//! `ds update` (v0.3) adds single-delta schema mutation per D2.
 
-use clap::Subcommand;
+use std::path::PathBuf;
+
+use clap::{Subcommand, ValueEnum};
 
 use crate::api::data_source::{
-    CreateDataSourceParent, CreateDataSourceRequest, QueryDataSourceRequest,
+    CreateDataSourceParent, CreateDataSourceRequest, QueryDataSourceRequest, SelectKind,
+    UpdateDataSourceRequest,
 };
 use crate::cli::{build_client, Cli, CliError};
 use crate::output::emit;
-use crate::types::rich_text::{Annotations, RichText, RichTextContent, TextContent};
+use crate::types::common::SelectOption;
+use crate::types::property_schema::PropertySchema;
+use crate::types::rich_text::RichText;
 use crate::validation::{DataSourceId, DatabaseId};
 
 #[derive(Subcommand, Debug)]
@@ -49,6 +55,97 @@ pub enum DsCmd {
         #[arg(long)]
         properties: String,
     },
+    /// Mutate a data source's schema (single-delta per invocation).
+    ///
+    /// See `notion-cli ds update add-property --help` for the per-op
+    /// flag reference. Destructive ops (remove-property) require
+    /// `--yes` in non-TTY contexts (D1).
+    #[command(subcommand)]
+    Update(UpdateCmd),
+}
+
+#[derive(Subcommand, Debug)]
+pub enum UpdateCmd {
+    /// Add a new property to the schema.
+    AddProperty {
+        /// Data source ID or URL.
+        id: String,
+        /// New property name.
+        #[arg(long)]
+        name: String,
+        /// Property schema as inline JSON. Example:
+        /// `--schema '{"type":"select","select":{"options":[{"name":"High"}]}}'`.
+        #[arg(long)]
+        schema: String,
+    },
+    /// Remove a property from the schema. DESTRUCTIVE.
+    RemoveProperty {
+        /// Data source ID or URL.
+        id: String,
+        /// Property name to remove.
+        #[arg(long)]
+        name: String,
+        /// Confirm destructive removal. Required in non-TTY contexts
+        /// (agents, scripts); interactive TTY prompt is wired in D1.
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Rename a property.
+    RenameProperty {
+        /// Data source ID or URL.
+        id: String,
+        /// Current property name.
+        #[arg(long)]
+        from: String,
+        /// New property name.
+        #[arg(long)]
+        to: String,
+    },
+    /// Append an option to a select / multi-select / status property.
+    /// Notion merges by option name — existing options are preserved.
+    AddOption {
+        /// Data source ID or URL.
+        id: String,
+        /// Target property name.
+        #[arg(long)]
+        property: String,
+        /// Property kind.
+        #[arg(long, value_enum, default_value_t = SelectKindArg::Select)]
+        kind: SelectKindArg,
+        /// Option name.
+        #[arg(long)]
+        name: String,
+        /// Optional colour (e.g. `blue`, `red`, `default`).
+        #[arg(long)]
+        color: Option<String>,
+    },
+    /// Bulk update (non-atomic escape hatch). Reads a JSON file
+    /// containing an `UpdateDataSourceRequest` body. Partial failure
+    /// leaves the DS in mixed state — caller accepts that.
+    Bulk {
+        /// Data source ID or URL.
+        id: String,
+        /// Path to JSON body file.
+        #[arg(long)]
+        body: PathBuf,
+    },
+}
+
+#[derive(Copy, Clone, Debug, ValueEnum)]
+pub enum SelectKindArg {
+    Select,
+    MultiSelect,
+    Status,
+}
+
+impl From<SelectKindArg> for SelectKind {
+    fn from(k: SelectKindArg) -> Self {
+        match k {
+            SelectKindArg::Select => SelectKind::Select,
+            SelectKindArg::MultiSelect => SelectKind::MultiSelect,
+            SelectKindArg::Status => SelectKind::Status,
+        }
+    }
 }
 
 pub async fn run(cli: &Cli, cmd: &DsCmd) -> Result<(), CliError> {
@@ -57,10 +154,13 @@ pub async fn run(cli: &Cli, cmd: &DsCmd) -> Result<(), CliError> {
             let ds_id = DataSourceId::from_url_or_id(id)
                 .map_err(|e| CliError::Validation(format!("data source id: {e}")))?;
             if cli.check_request {
-                emit(&cli.output_options(), &serde_json::json!({
-                    "method": "GET",
-                    "path": format!("/v1/data_sources/{ds_id}"),
-                }))?;
+                emit(
+                    &cli.output_options(),
+                    &serde_json::json!({
+                        "method": "GET",
+                        "path": format!("/v1/data_sources/{ds_id}"),
+                    }),
+                )?;
                 return Ok(());
             }
             let client = build_client(cli)?;
@@ -95,11 +195,14 @@ pub async fn run(cli: &Cli, cmd: &DsCmd) -> Result<(), CliError> {
                 page_size: *page_size,
             };
             if cli.check_request {
-                emit(&cli.output_options(), &serde_json::json!({
-                    "method": "POST",
-                    "path": format!("/v1/data_sources/{ds_id}/query"),
-                    "body": req,
-                }))?;
+                emit(
+                    &cli.output_options(),
+                    &serde_json::json!({
+                        "method": "POST",
+                        "path": format!("/v1/data_sources/{ds_id}/query"),
+                        "body": req,
+                    }),
+                )?;
                 return Ok(());
             }
             let client = build_client(cli)?;
@@ -107,7 +210,11 @@ pub async fn run(cli: &Cli, cmd: &DsCmd) -> Result<(), CliError> {
             emit(&cli.output_options(), &resp)?;
             Ok(())
         }
-        DsCmd::Create { parent, title, properties } => {
+        DsCmd::Create {
+            parent,
+            title,
+            properties,
+        } => {
             let db_id = DatabaseId::from_url_or_id(parent)
                 .map_err(|e| CliError::Validation(format!("--parent: {e}")))?;
             let props: serde_json::Value = serde_json::from_str(properties)
@@ -115,7 +222,7 @@ pub async fn run(cli: &Cli, cmd: &DsCmd) -> Result<(), CliError> {
             let title_vec = title
                 .as_deref()
                 .filter(|s| !s.is_empty())
-                .map(plain_title)
+                .map(RichText::plain)
                 .unwrap_or_default();
             let req = CreateDataSourceRequest {
                 parent: CreateDataSourceParent::database(db_id),
@@ -123,11 +230,14 @@ pub async fn run(cli: &Cli, cmd: &DsCmd) -> Result<(), CliError> {
                 properties: props,
             };
             if cli.check_request {
-                emit(&cli.output_options(), &serde_json::json!({
-                    "method": "POST",
-                    "path": "/v1/data_sources",
-                    "body": req,
-                }))?;
+                emit(
+                    &cli.output_options(),
+                    &serde_json::json!({
+                        "method": "POST",
+                        "path": "/v1/data_sources",
+                        "body": req,
+                    }),
+                )?;
                 return Ok(());
             }
             let client = build_client(cli)?;
@@ -135,16 +245,92 @@ pub async fn run(cli: &Cli, cmd: &DsCmd) -> Result<(), CliError> {
             emit(&cli.output_options(), &ds)?;
             Ok(())
         }
+        DsCmd::Update(sub) => run_update(cli, sub).await,
     }
 }
 
-fn plain_title(text: &str) -> Vec<RichText> {
-    vec![RichText {
-        content: RichTextContent::Text {
-            text: TextContent { content: text.to_string(), link: None },
-        },
-        annotations: Annotations::default(),
-        plain_text: text.to_string(),
-        href: None,
-    }]
+async fn run_update(cli: &Cli, cmd: &UpdateCmd) -> Result<(), CliError> {
+    let (ds_id, req) = build_update(cmd)?;
+    if cli.check_request {
+        emit(
+            &cli.output_options(),
+            &serde_json::json!({
+                "method": "PATCH",
+                "path": format!("/v1/data_sources/{ds_id}"),
+                "body": req,
+            }),
+        )?;
+        return Ok(());
+    }
+    let client = build_client(cli)?;
+    let ds = client.update_data_source(&ds_id, &req).await?;
+    emit(&cli.output_options(), &ds)?;
+    Ok(())
+}
+
+fn build_update(cmd: &UpdateCmd) -> Result<(DataSourceId, UpdateDataSourceRequest), CliError> {
+    match cmd {
+        UpdateCmd::AddProperty { id, name, schema } => {
+            let ds_id = parse_ds_id(id)?;
+            let parsed: PropertySchema = serde_json::from_str(schema)
+                .map_err(|e| CliError::Validation(format!("--schema: {e}")))?;
+            let req = UpdateDataSourceRequest::add_property(name, &parsed)
+                .map_err(|e| CliError::Validation(format!("build add_property: {e}")))?;
+            Ok((ds_id, req))
+        }
+        UpdateCmd::RemoveProperty { id, name, yes } => {
+            if !*yes {
+                return Err(CliError::Usage(format!(
+                    "remove-property '{name}' is destructive; pass --yes to confirm"
+                )));
+            }
+            let ds_id = parse_ds_id(id)?;
+            Ok((ds_id, UpdateDataSourceRequest::remove_property(name)))
+        }
+        UpdateCmd::RenameProperty { id, from, to } => {
+            let ds_id = parse_ds_id(id)?;
+            Ok((ds_id, UpdateDataSourceRequest::rename_property(from, to)))
+        }
+        UpdateCmd::AddOption {
+            id,
+            property,
+            kind,
+            name,
+            color,
+        } => {
+            let ds_id = parse_ds_id(id)?;
+            let option = SelectOption {
+                id: None,
+                name: name.clone(),
+                color: parse_color(color.as_deref())
+                    .map_err(|e| CliError::Validation(format!("--color: {e}")))?,
+            };
+            let req = UpdateDataSourceRequest::add_option(property, SelectKind::from(*kind), option);
+            Ok((ds_id, req))
+        }
+        UpdateCmd::Bulk { id, body } => {
+            let ds_id = parse_ds_id(id)?;
+            let text = std::fs::read_to_string(body).map_err(|e| {
+                CliError::Validation(format!("--body {}: {e}", body.display()))
+            })?;
+            let json: serde_json::Value = serde_json::from_str(&text)
+                .map_err(|e| CliError::Validation(format!("--body JSON: {e}")))?;
+            let req = UpdateDataSourceRequest::from_bulk(json)
+                .map_err(|e| CliError::Validation(format!("bulk: {e}")))?;
+            Ok((ds_id, req))
+        }
+    }
+}
+
+fn parse_ds_id(s: &str) -> Result<DataSourceId, CliError> {
+    DataSourceId::from_url_or_id(s)
+        .map_err(|e| CliError::Validation(format!("data source id: {e}")))
+}
+
+fn parse_color(c: Option<&str>) -> Result<Option<crate::types::common::Color>, String> {
+    let Some(c) = c else { return Ok(None) };
+    let json = serde_json::json!(c);
+    let color: crate::types::common::Color = serde_json::from_value(json)
+        .map_err(|e| format!("'{c}' is not a valid color: {e}"))?;
+    Ok(Some(color))
 }

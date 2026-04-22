@@ -45,7 +45,7 @@ use crate::mcp::common::{to_result, Inner};
 use crate::mcp::handlers;
 use crate::mcp::params::{
     AppendBlockChildrenParams, CreateDataSourceParams, CreatePageParams, DbCreateParams,
-    DeleteBlockParams, GetBlockParams, GetDataSourceParams, GetPageParams,
+    DeleteBlockParams, DsUpdateParams, GetBlockParams, GetDataSourceParams, GetPageParams,
     ListBlockChildrenParams, QueryDataSourceParams, SearchParams, UpdateBlockParams,
     UpdatePageParams,
 };
@@ -260,6 +260,25 @@ impl NotionAdmin {
         let result = handlers::db_create(&self.inner.client, params.0).await;
         self.inner.audit.record(
             "db_create",
+            Some(&target),
+            result.as_ref().map(|_| ()).map_err(|e| e.message.as_ref()),
+        );
+        Ok(to_result(&result?))
+    }
+
+    #[tool(
+        name = "ds_update",
+        description = "Mutate a data source's schema. `action` dispatches: add_property, remove_property (destructive — requires confirm=true AND NOTION_CLI_ADMIN_CONFIRMED=1 env), rename_property, add_option, bulk (non-atomic escape). Single-delta default per invocation. Admin operation — audited."
+    )]
+    async fn ds_update(
+        &self,
+        params: Parameters<DsUpdateParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let target = params.0.data_source_id.clone();
+        let action = params.0.action.clone();
+        let result = handlers::ds_update(&self.inner.client, params.0).await;
+        self.inner.audit.record(
+            &format!("ds_update:{action}"),
             Some(&target),
             result.as_ref().map(|_| ()).map_err(|e| e.message.as_ref()),
         );

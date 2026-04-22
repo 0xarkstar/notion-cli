@@ -7,7 +7,8 @@ use rmcp::ErrorData;
 
 use crate::api::block::{AppendBlockChildrenRequest, UpdateBlockRequest};
 use crate::api::data_source::{
-    CreateDataSourceParent, CreateDataSourceRequest, QueryDataSourceRequest,
+    CreateDataSourceParent, CreateDataSourceRequest, QueryDataSourceRequest, SelectKind,
+    UpdateDataSourceRequest,
 };
 use crate::api::database::{
     CreateDatabaseParent, CreateDatabaseRequest, InitialDataSource,
@@ -17,12 +18,13 @@ use crate::api::search::SearchRequest;
 use crate::api::{ApiError, NotionClient};
 use crate::mcp::params::{
     AppendBlockChildrenParams, CreateDataSourceParams, CreatePageParams, DbCreateParams,
-    DeleteBlockParams, GetBlockParams, GetDataSourceParams, GetPageParams,
+    DeleteBlockParams, DsUpdateParams, GetBlockParams, GetDataSourceParams, GetPageParams,
     ListBlockChildrenParams, QueryDataSourceParams, SearchParams, UpdateBlockParams,
     UpdatePageParams,
 };
 use crate::output::wrap_untrusted;
 use crate::types::block::BlockBody;
+use crate::types::common::SelectOption;
 use crate::types::icon::{Cover, Icon};
 use crate::types::property::PropertyValue;
 use crate::types::property_schema::PropertySchema;
@@ -208,6 +210,97 @@ pub async fn create_data_source(
 }
 
 // === Admin handlers =======================================================
+
+pub async fn ds_update(
+    client: &NotionClient,
+    p: DsUpdateParams,
+) -> Result<serde_json::Value, ErrorData> {
+    let id = validate(
+        DataSourceId::from_url_or_id(&p.data_source_id),
+        "data_source_id",
+    )?;
+    let req = build_ds_update(&p)?;
+    let ds = client
+        .update_data_source(&id, &req)
+        .await
+        .map_err(|e| api_to_rpc(&e))?;
+    Ok(wrap_untrusted(&serde_json::to_value(ds).map_err(|e| {
+        ErrorData::internal_error(format!("serialize: {e}"), None)
+    })?))
+}
+
+fn build_ds_update(p: &DsUpdateParams) -> Result<UpdateDataSourceRequest, ErrorData> {
+    match p.action.as_str() {
+        "add_property" => {
+            let name = field_str(p.name.as_deref(), "add_property", "name")?;
+            let schema_json = p
+                .schema
+                .as_ref()
+                .ok_or_else(|| invalid("add_property: 'schema' required"))?;
+            let schema: PropertySchema = parse_json(schema_json, "schema")?;
+            UpdateDataSourceRequest::add_property(name, &schema).map_err(|e| {
+                ErrorData::invalid_params(format!("build add_property: {e}"), None)
+            })
+        }
+        "remove_property" => {
+            // D1 two-factor gate: param AND env
+            if p.confirm != Some(true) {
+                return Err(invalid(
+                    "remove_property: destructive — pass confirm=true",
+                ));
+            }
+            if std::env::var("NOTION_CLI_ADMIN_CONFIRMED").ok().as_deref() != Some("1") {
+                return Err(invalid(
+                    "remove_property: set NOTION_CLI_ADMIN_CONFIRMED=1 in the \
+                     notion-cli mcp process environment to enable destructive ops",
+                ));
+            }
+            let name = field_str(p.name.as_deref(), "remove_property", "name")?;
+            Ok(UpdateDataSourceRequest::remove_property(name))
+        }
+        "rename_property" => {
+            let old = field_str(p.name.as_deref(), "rename_property", "name")?;
+            let new = field_str(p.new_name.as_deref(), "rename_property", "new_name")?;
+            Ok(UpdateDataSourceRequest::rename_property(old, new))
+        }
+        "add_option" => {
+            let prop = field_str(p.property.as_deref(), "add_option", "property")?;
+            let kind_str = p.kind.as_deref().unwrap_or("select");
+            let kind = SelectKind::parse(kind_str)
+                .map_err(|e| invalid(format!("add_option: {e}")))?;
+            let option_json = p
+                .option
+                .as_ref()
+                .ok_or_else(|| invalid("add_option: 'option' required"))?;
+            let option: SelectOption = parse_json(option_json, "option")?;
+            Ok(UpdateDataSourceRequest::add_option(prop, kind, option))
+        }
+        "bulk" => {
+            let body = p
+                .body
+                .as_ref()
+                .ok_or_else(|| invalid("bulk: 'body' required"))?;
+            UpdateDataSourceRequest::from_bulk(body.clone())
+                .map_err(|e| invalid(format!("bulk: {e}")))
+        }
+        other => Err(invalid(format!(
+            "unknown action '{other}' (expected: add_property, remove_property, \
+             rename_property, add_option, bulk)"
+        ))),
+    }
+}
+
+fn field_str<'a>(
+    v: Option<&'a str>,
+    action: &str,
+    field: &str,
+) -> Result<&'a str, ErrorData> {
+    v.ok_or_else(|| invalid(format!("{action}: '{field}' required")))
+}
+
+fn invalid(msg: impl Into<String>) -> ErrorData {
+    ErrorData::invalid_params(msg.into(), None)
+}
 
 pub async fn db_create(
     client: &NotionClient,

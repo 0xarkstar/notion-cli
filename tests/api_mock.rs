@@ -17,7 +17,8 @@ use std::collections::HashMap;
 
 use notion_cli::api::{ApiError, ClientConfig, NotionClient, NOTION_API_VERSION};
 use notion_cli::api::data_source::{
-    CreateDataSourceParent, CreateDataSourceRequest, QueryDataSourceRequest,
+    CreateDataSourceParent, CreateDataSourceRequest, QueryDataSourceRequest, SelectKind,
+    UpdateDataSourceRequest,
 };
 use notion_cli::api::database::{
     CreateDatabaseParent, CreateDatabaseRequest, InitialDataSource,
@@ -328,6 +329,164 @@ async fn create_data_source_hits_correct_path() {
         .await
         .unwrap();
     assert_eq!(ds.id.as_str(), DS_ID_HEX);
+}
+
+// === Admin: update_data_source (v0.3) =====================================
+
+#[tokio::test]
+async fn ds_update_add_property_sends_patch_with_single_delta() {
+    let server = MockServer::start().await;
+    Mock::given(method("PATCH"))
+        .and(path(format!("/v1/data_sources/{DS_ID_HEX}")))
+        .and(body_json(json!({
+            "properties": {
+                "Priority": {
+                    "type": "select",
+                    "select": {"options": [{"name": "High"}]}
+                }
+            }
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(test_data_source_json(DS_ID_HEX)))
+        .mount(&server)
+        .await;
+
+    let client = make_client(&server);
+    let schema = PropertySchema::Select {
+        select: SelectConfig {
+            options: vec![SelectOption {
+                id: None,
+                name: "High".into(),
+                color: None,
+            }],
+        },
+    };
+    let req = UpdateDataSourceRequest::add_property("Priority", &schema).unwrap();
+    let ds = client
+        .update_data_source(&DataSourceId::parse(DS_ID_HEX).unwrap(), &req)
+        .await
+        .unwrap();
+    assert_eq!(ds.id.as_str(), DS_ID_HEX);
+}
+
+#[tokio::test]
+async fn ds_update_remove_property_serialises_as_null() {
+    let server = MockServer::start().await;
+    Mock::given(method("PATCH"))
+        .and(path(format!("/v1/data_sources/{DS_ID_HEX}")))
+        .and(body_json(json!({ "properties": { "OldField": null } })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(test_data_source_json(DS_ID_HEX)))
+        .mount(&server)
+        .await;
+
+    let client = make_client(&server);
+    let req = UpdateDataSourceRequest::remove_property("OldField");
+    let ds = client
+        .update_data_source(&DataSourceId::parse(DS_ID_HEX).unwrap(), &req)
+        .await
+        .unwrap();
+    assert_eq!(ds.id.as_str(), DS_ID_HEX);
+}
+
+#[tokio::test]
+async fn ds_update_rename_property_serialises_name_directive() {
+    let server = MockServer::start().await;
+    Mock::given(method("PATCH"))
+        .and(path(format!("/v1/data_sources/{DS_ID_HEX}")))
+        .and(body_json(json!({
+            "properties": { "OldName": { "name": "NewName" } }
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(test_data_source_json(DS_ID_HEX)))
+        .mount(&server)
+        .await;
+
+    let client = make_client(&server);
+    let req = UpdateDataSourceRequest::rename_property("OldName", "NewName");
+    let ds = client
+        .update_data_source(&DataSourceId::parse(DS_ID_HEX).unwrap(), &req)
+        .await
+        .unwrap();
+    assert_eq!(ds.id.as_str(), DS_ID_HEX);
+}
+
+#[tokio::test]
+async fn ds_update_add_option_appends_one_option_for_merge() {
+    let server = MockServer::start().await;
+    Mock::given(method("PATCH"))
+        .and(path(format!("/v1/data_sources/{DS_ID_HEX}")))
+        .and(body_json(json!({
+            "properties": {
+                "Priority": {
+                    "type": "select",
+                    "select": {"options": [{"name": "Urgent", "color": "red"}]}
+                }
+            }
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(test_data_source_json(DS_ID_HEX)))
+        .mount(&server)
+        .await;
+
+    let client = make_client(&server);
+    let option = SelectOption {
+        id: None,
+        name: "Urgent".into(),
+        color: Some(notion_cli::types::common::Color::Red),
+    };
+    let req = UpdateDataSourceRequest::add_option("Priority", SelectKind::Select, option);
+    let ds = client
+        .update_data_source(&DataSourceId::parse(DS_ID_HEX).unwrap(), &req)
+        .await
+        .unwrap();
+    assert_eq!(ds.id.as_str(), DS_ID_HEX);
+}
+
+#[tokio::test]
+async fn ds_update_bulk_passes_raw_body_through() {
+    let server = MockServer::start().await;
+    let body = json!({
+        "title": [{
+            "type": "text",
+            "text": {"content": "Renamed"},
+            "annotations": {
+                "bold": false, "italic": false, "strikethrough": false,
+                "underline": false, "code": false, "color": "default"
+            },
+            "plain_text": "Renamed"
+        }],
+        "properties": {
+            "NewProp":  { "type": "checkbox", "checkbox": {} },
+            "OldProp":  null
+        }
+    });
+    Mock::given(method("PATCH"))
+        .and(path(format!("/v1/data_sources/{DS_ID_HEX}")))
+        .and(body_json(body.clone()))
+        .respond_with(ResponseTemplate::new(200).set_body_json(test_data_source_json(DS_ID_HEX)))
+        .mount(&server)
+        .await;
+
+    let client = make_client(&server);
+    let req = UpdateDataSourceRequest::from_bulk(body).unwrap();
+    let ds = client
+        .update_data_source(&DataSourceId::parse(DS_ID_HEX).unwrap(), &req)
+        .await
+        .unwrap();
+    assert_eq!(ds.id.as_str(), DS_ID_HEX);
+}
+
+#[test]
+fn select_kind_wire_keys_match_notion_shapes() {
+    assert_eq!(SelectKind::Select.wire_key(), "select");
+    assert_eq!(SelectKind::MultiSelect.wire_key(), "multi_select");
+    assert_eq!(SelectKind::Status.wire_key(), "status");
+}
+
+#[test]
+fn ds_update_bulk_rejects_non_object_body() {
+    let err = UpdateDataSourceRequest::from_bulk(json!([1, 2, 3])).unwrap_err();
+    assert!(
+        err.to_lowercase().contains("object"),
+        "expected object-type hint: {err}"
+    );
 }
 
 // === Admin: create_database (v0.3) ========================================
