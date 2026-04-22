@@ -1,7 +1,7 @@
 {
-  "tool_name": "WebFetch",
-  "tool_input_preview": "{\"url\":\"https://developers.notion.com/changelog\",\"prompt\":\"Does the Notion API changelog between 2025-09-03 and 2026-04-22 mention any ability to change or mutate a page's parent via PATCH, or any new...",
-  "error": "Request failed with status code 404",
-  "timestamp": "2026-04-22T11:52:33.280Z",
-  "retry_count": 4
+  "tool_name": "Bash",
+  "tool_input_preview": "{\"command\":\"sleep 20 && curl -sL \\\"https://clawhub.ai/api/v1/skills/notion-cli-mcp?version=2.0.1\\\" 2>&1 | python3 -c \\\"import json,sys; d=json.load(sys.stdin); m=d.get('moderation',{}); print('verdict...",
+  "error": "Exit code 1\nTraceback (most recent call last):\n  File \"<string>\", line 1, in <module>\nAttributeError: 'NoneType' object has no attribute 'get'",
+  "timestamp": "2026-04-22T17:48:22.164Z",
+  "retry_count": 2
 }

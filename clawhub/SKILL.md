@@ -8,7 +8,12 @@ metadata:
     tags: [notion, mcp, cli, rust, productivity, database, wiki, agent-safety, data-source]
     requires:
       bins: [notion-cli]
-      env: [NOTION_TOKEN, NOTION_CLI_AUDIT_LOG, NOTION_CLI_ADMIN_LOG, NOTION_CLI_ADMIN_CONFIRMED]
+      # Only NOTION_TOKEN is strictly required — it's the primary
+      # credential for every tier. The audit-log / admin-log /
+      # admin-confirm env vars are **opt-in** per operator workflow;
+      # setting them is documented under "MCP server invocation
+      # examples" below but they are not required by default.
+      env: [NOTION_TOKEN]
 ---
 
 # notion-cli-mcp
