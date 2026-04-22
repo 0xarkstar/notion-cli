@@ -123,6 +123,83 @@ fn create_data_source_tool_is_exposed_in_write_mode() {
     );
 }
 
+/// D13 admin-tier snapshot — regression tripwire.
+///
+/// Admin tier = v0.2's 12 write-tier tools + the v0.3 admin
+/// lifecycle tools. Each v0.3 admin command (tasks 18-22) extends
+/// this assertion when its tool lands. Do NOT loosen the equality
+/// — it guards against cross-tier drift per D5/D13.
+///
+/// Current admin tools landed: `db_create` (task 18).
+/// Pending: `ds_update`, `ds_add_relation`, `page_move`.
+#[test]
+fn allow_admin_mode_exposes_expected_tool_set() {
+    let out = run_mcp(&["--allow-admin"]);
+    let tools = extract_tool_names(&out);
+    assert_eq!(
+        tools,
+        vec![
+            "append_block_children".to_string(),
+            "create_data_source".to_string(),
+            "create_page".to_string(),
+            "db_create".to_string(),
+            "delete_block".to_string(),
+            "get_block".to_string(),
+            "get_data_source".to_string(),
+            "get_page".to_string(),
+            "list_block_children".to_string(),
+            "query_data_source".to_string(),
+            "search".to_string(),
+            "update_block".to_string(),
+            "update_page".to_string(),
+        ],
+        "admin tier tool set regression:\n{out}",
+    );
+}
+
+/// Invariant: admin-only tools must NOT leak into the write tier.
+/// Every new admin command must add its tool name to the list below.
+#[test]
+fn admin_tools_are_not_exposed_in_write_mode() {
+    let out = run_mcp(&["--allow-write"]);
+    let tools = extract_tool_names(&out);
+    for admin_tool in ["db_create"] {
+        assert!(
+            !tools.contains(&admin_tool.to_string()),
+            "admin tool `{admin_tool}` leaked into --allow-write mode:\n{tools:?}",
+        );
+    }
+}
+
+/// Sanity check that `--allow-admin` and `--allow-write` are mutually
+/// exclusive at the clap layer (they're marked `conflicts_with`). An
+/// operator who tries to pass both gets a CLI error — not silently
+/// collapsed into one mode.
+#[test]
+fn allow_admin_and_allow_write_are_mutually_exclusive() {
+    let exe = env!("CARGO_BIN_EXE_notion-cli");
+    let out = Command::new(exe)
+        .arg("mcp")
+        .arg("--token")
+        .arg("ntn_test")
+        .arg("--allow-write")
+        .arg("--allow-admin")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("spawn");
+    assert!(
+        !out.status.success(),
+        "expected clap to reject --allow-write + --allow-admin together",
+    );
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("allow-admin") || err.contains("conflict") || err.contains("cannot be used"),
+        "expected clap conflict error, got: {err}",
+    );
+}
+
 #[test]
 fn tool_schemas_have_flat_string_ids() {
     // Agent-friendliness gate: ID fields should surface as plain

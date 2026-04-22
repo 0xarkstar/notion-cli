@@ -141,6 +141,138 @@ fn check_request_ds_create_hits_the_bug_endpoint() {
     );
 }
 
+// === db create (v0.3 admin) ==============================================
+
+fn write_temp_schema(name: &str, body: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir();
+    let path = dir.join(format!("notion-cli-test-schema-{name}.json"));
+    std::fs::write(&path, body).expect("write temp schema");
+    path
+}
+
+#[test]
+fn check_request_db_create_uses_page_parent_and_databases_path() {
+    let schema_path = write_temp_schema(
+        "db_create_ok",
+        r#"{"Name":{"type":"title","title":{}}}"#,
+    );
+    let assert = cli()
+        .args([
+            "--check-request",
+            "--raw",
+            "db",
+            "create",
+            "--parent-page",
+            VALID_ID,
+            "--title",
+            "TestDB",
+            "--schema",
+            schema_path.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let parsed: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    assert_eq!(parsed.get("method").and_then(|v| v.as_str()), Some("POST"));
+    assert_eq!(parsed.get("path").and_then(|v| v.as_str()), Some("/v1/databases"));
+    let parent_type = parsed
+        .pointer("/body/parent/type")
+        .and_then(|v| v.as_str());
+    assert_eq!(parent_type, Some("page_id"), "parent must be page_id");
+    let _ = std::fs::remove_file(schema_path);
+}
+
+#[test]
+fn db_create_without_title_property_exits_with_validation_code_2() {
+    let schema_path = write_temp_schema(
+        "db_create_no_title",
+        r#"{"Done":{"type":"checkbox","checkbox":{}}}"#,
+    );
+    let assert = cli()
+        .args([
+            "--check-request",
+            "db",
+            "create",
+            "--parent-page",
+            VALID_ID,
+            "--title",
+            "BadDB",
+            "--schema",
+            schema_path.to_str().unwrap(),
+        ])
+        .assert()
+        .failure();
+    assert_eq!(assert.get_output().status.code(), Some(2));
+    let err = String::from_utf8_lossy(&assert.get_output().stderr);
+    assert!(
+        err.to_lowercase().contains("title"),
+        "expected title-prop validation error in stderr: {err}",
+    );
+    let _ = std::fs::remove_file(schema_path);
+}
+
+#[test]
+fn db_create_with_emoji_icon_parses_to_emoji_shape() {
+    let schema_path = write_temp_schema(
+        "db_create_emoji",
+        r#"{"Name":{"type":"title","title":{}}}"#,
+    );
+    let assert = cli()
+        .args([
+            "--check-request",
+            "--raw",
+            "db",
+            "create",
+            "--parent-page",
+            VALID_ID,
+            "--title",
+            "IconDB",
+            "--icon",
+            "🚀",
+            "--schema",
+            schema_path.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let parsed: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    let icon_type = parsed.pointer("/body/icon/type").and_then(|v| v.as_str());
+    assert_eq!(icon_type, Some("emoji"));
+    let emoji = parsed.pointer("/body/icon/emoji").and_then(|v| v.as_str());
+    assert_eq!(emoji, Some("🚀"));
+    let _ = std::fs::remove_file(schema_path);
+}
+
+#[test]
+fn db_create_with_url_icon_parses_to_external_shape() {
+    let schema_path = write_temp_schema(
+        "db_create_url_icon",
+        r#"{"Name":{"type":"title","title":{}}}"#,
+    );
+    let assert = cli()
+        .args([
+            "--check-request",
+            "--raw",
+            "db",
+            "create",
+            "--parent-page",
+            VALID_ID,
+            "--title",
+            "UrlIconDB",
+            "--icon",
+            "https://example.com/icon.png",
+            "--schema",
+            schema_path.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let parsed: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    let icon_type = parsed.pointer("/body/icon/type").and_then(|v| v.as_str());
+    assert_eq!(icon_type, Some("external"));
+    let _ = std::fs::remove_file(schema_path);
+}
+
 // === Output envelope ======================================================
 
 #[test]

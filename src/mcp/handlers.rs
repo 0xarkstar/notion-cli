@@ -9,18 +9,24 @@ use crate::api::block::{AppendBlockChildrenRequest, UpdateBlockRequest};
 use crate::api::data_source::{
     CreateDataSourceParent, CreateDataSourceRequest, QueryDataSourceRequest,
 };
+use crate::api::database::{
+    CreateDatabaseParent, CreateDatabaseRequest, InitialDataSource,
+};
 use crate::api::page::{CreatePageRequest, PageParent, UpdatePageRequest};
 use crate::api::search::SearchRequest;
 use crate::api::{ApiError, NotionClient};
 use crate::mcp::params::{
-    AppendBlockChildrenParams, CreateDataSourceParams, CreatePageParams, DeleteBlockParams,
-    GetBlockParams, GetDataSourceParams, GetPageParams, ListBlockChildrenParams,
-    QueryDataSourceParams, SearchParams, UpdateBlockParams, UpdatePageParams,
+    AppendBlockChildrenParams, CreateDataSourceParams, CreatePageParams, DbCreateParams,
+    DeleteBlockParams, GetBlockParams, GetDataSourceParams, GetPageParams,
+    ListBlockChildrenParams, QueryDataSourceParams, SearchParams, UpdateBlockParams,
+    UpdatePageParams,
 };
 use crate::output::wrap_untrusted;
 use crate::types::block::BlockBody;
+use crate::types::icon::{Cover, Icon};
 use crate::types::property::PropertyValue;
-use crate::types::rich_text::{Annotations, RichText, RichTextContent, TextContent};
+use crate::types::property_schema::PropertySchema;
+use crate::types::rich_text::RichText;
 use crate::validation::{BlockId, DataSourceId, DatabaseId, PageId};
 
 fn api_to_rpc(e: &ApiError) -> ErrorData {
@@ -188,7 +194,7 @@ pub async fn create_data_source(
         .title
         .as_deref()
         .filter(|s| !s.is_empty())
-        .map(plain_title)
+        .map(RichText::plain)
         .unwrap_or_default();
     let req = CreateDataSourceRequest {
         parent: CreateDataSourceParent::database(db_id),
@@ -197,6 +203,31 @@ pub async fn create_data_source(
     };
     let ds = client.create_data_source(&req).await.map_err(|e| api_to_rpc(&e))?;
     Ok(wrap_untrusted(&serde_json::to_value(ds).map_err(|e| {
+        ErrorData::internal_error(format!("serialize: {e}"), None)
+    })?))
+}
+
+// === Admin handlers =======================================================
+
+pub async fn db_create(
+    client: &NotionClient,
+    p: DbCreateParams,
+) -> Result<serde_json::Value, ErrorData> {
+    let parent_id = validate(PageId::from_url_or_id(&p.parent_page_id), "parent_page_id")?;
+    let properties: HashMap<String, PropertySchema> =
+        parse_json(&p.properties, "properties")?;
+    let req = CreateDatabaseRequest {
+        parent: CreateDatabaseParent::page(parent_id),
+        title: RichText::plain(&p.title),
+        initial_data_source: InitialDataSource { properties },
+        icon: p.icon.as_deref().map(Icon::parse_cli),
+        cover: p.cover.as_deref().map(Cover::external),
+        is_inline: p.is_inline,
+    };
+    req.validate_local()
+        .map_err(|e| ErrorData::invalid_params(e, None))?;
+    let db = client.create_database(&req).await.map_err(|e| api_to_rpc(&e))?;
+    Ok(wrap_untrusted(&serde_json::to_value(db).map_err(|e| {
         ErrorData::internal_error(format!("serialize: {e}"), None)
     })?))
 }
@@ -282,13 +313,3 @@ pub async fn delete_block(
     })?))
 }
 
-fn plain_title(s: &str) -> Vec<RichText> {
-    vec![RichText {
-        content: RichTextContent::Text {
-            text: TextContent { content: s.to_string(), link: None },
-        },
-        annotations: Annotations::default(),
-        plain_text: s.to_string(),
-        href: None,
-    }]
-}

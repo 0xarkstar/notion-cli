@@ -3,6 +3,7 @@ pub mod common;
 pub mod data_source;
 pub mod database;
 pub mod filter;
+pub mod icon;
 pub mod page;
 pub mod property;
 pub mod property_schema;
@@ -19,6 +20,7 @@ pub use common::{
 pub use data_source::{DataSource, DatabaseParentRef};
 pub use database::{Database, DataSourceRef};
 pub use filter::{FilterExpression, PropertyFilter};
+pub use icon::{Cover, ExternalFile, FileRef, Icon};
 pub use page::Page;
 pub use property::{Property, PropertyValue};
 pub use property_schema::{

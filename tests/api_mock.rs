@@ -13,13 +13,22 @@
 use std::num::NonZeroU32;
 use std::time::Duration;
 
+use std::collections::HashMap;
+
 use notion_cli::api::{ApiError, ClientConfig, NotionClient, NOTION_API_VERSION};
 use notion_cli::api::data_source::{
     CreateDataSourceParent, CreateDataSourceRequest, QueryDataSourceRequest,
 };
+use notion_cli::api::database::{
+    CreateDatabaseParent, CreateDatabaseRequest, InitialDataSource,
+};
 use notion_cli::api::page::{CreatePageRequest, PageParent, UpdatePageRequest};
 use notion_cli::config::NotionToken;
+use notion_cli::types::icon::Icon;
 use notion_cli::types::property::PropertyValue;
+use notion_cli::types::property_schema::{EmptyConfig, PropertySchema, SelectConfig};
+use notion_cli::types::common::SelectOption;
+use notion_cli::types::rich_text::RichText;
 use notion_cli::validation::{DataSourceId, DatabaseId, PageId};
 use serde_json::json;
 use wiremock::matchers::{body_json, header, method, path};
@@ -320,6 +329,175 @@ async fn create_data_source_hits_correct_path() {
         .unwrap();
     assert_eq!(ds.id.as_str(), DS_ID_HEX);
 }
+
+// === Admin: create_database (v0.3) ========================================
+
+fn test_database_json(id: &str) -> serde_json::Value {
+    json!({
+        "object": "database",
+        "id": id,
+        "created_time": "2026-04-22T10:00:00.000Z",
+        "last_edited_time": "2026-04-22T10:00:00.000Z",
+        "title": [],
+        "description": [],
+        "archived": false,
+        "in_trash": false,
+        "properties": {
+            "Name": {"type": "title", "title": {}}
+        },
+        "data_sources": [
+            {"id": DS_ID_HEX, "name": "Default"}
+        ]
+    })
+}
+
+#[tokio::test]
+async fn create_database_hits_correct_path() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/databases"))
+        .and(header("Notion-Version", NOTION_API_VERSION))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(test_database_json(DB_ID_HEX)),
+        )
+        .mount(&server)
+        .await;
+
+    let client = make_client(&server);
+    let mut props = HashMap::new();
+    props.insert(
+        "Name".to_string(),
+        PropertySchema::Title { title: EmptyConfig {} },
+    );
+    let req = CreateDatabaseRequest {
+        parent: CreateDatabaseParent::page(PageId::parse(PAGE_ID_HEX).unwrap()),
+        title: RichText::plain("Test DB"),
+        initial_data_source: InitialDataSource { properties: props },
+        icon: None,
+        cover: None,
+        is_inline: None,
+    };
+    let db = client.create_database(&req).await.unwrap();
+    assert_eq!(db.id.as_str(), DB_ID_HEX);
+}
+
+#[tokio::test]
+async fn create_database_serialises_initial_data_source_and_title() {
+    let server = MockServer::start().await;
+    // Match the exact wire body: annotations serialise with default
+    // bool/color fields on every run; link + href skip when None.
+    let expected_body = json!({
+        "parent": {"type": "page_id", "page_id": PAGE_ID_HEX},
+        "title": [{
+            "type": "text",
+            "text": {"content": "Inventory"},
+            "annotations": {
+                "bold": false, "italic": false, "strikethrough": false,
+                "underline": false, "code": false, "color": "default"
+            },
+            "plain_text": "Inventory"
+        }],
+        "initial_data_source": {
+            "properties": {
+                "Name": {"type": "title", "title": {}},
+                "Priority": {
+                    "type": "select",
+                    "select": {"options": [{"name": "High"}, {"name": "Low"}]}
+                }
+            }
+        },
+        "icon": {"type": "emoji", "emoji": "📦"}
+    });
+    Mock::given(method("POST"))
+        .and(path("/v1/databases"))
+        .and(body_json(expected_body))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(test_database_json(DB_ID_HEX)),
+        )
+        .mount(&server)
+        .await;
+
+    let client = make_client(&server);
+    let mut props = HashMap::new();
+    props.insert(
+        "Name".to_string(),
+        PropertySchema::Title { title: EmptyConfig {} },
+    );
+    props.insert(
+        "Priority".to_string(),
+        PropertySchema::Select {
+            select: SelectConfig {
+                options: vec![
+                    SelectOption { id: None, name: "High".into(), color: None },
+                    SelectOption { id: None, name: "Low".into(), color: None },
+                ],
+            },
+        },
+    );
+    let req = CreateDatabaseRequest {
+        parent: CreateDatabaseParent::page(PageId::parse(PAGE_ID_HEX).unwrap()),
+        title: RichText::plain("Inventory"),
+        initial_data_source: InitialDataSource { properties: props },
+        icon: Some(Icon::emoji("📦")),
+        cover: None,
+        is_inline: None,
+    };
+    let db = client.create_database(&req).await.unwrap();
+    assert_eq!(db.id.as_str(), DB_ID_HEX);
+}
+
+#[test]
+fn create_database_validate_local_rejects_missing_title_property() {
+    let mut props = HashMap::new();
+    props.insert(
+        "Whatever".to_string(),
+        PropertySchema::Checkbox { checkbox: EmptyConfig {} },
+    );
+    let req = CreateDatabaseRequest {
+        parent: CreateDatabaseParent::page(PageId::parse(PAGE_ID_HEX).unwrap()),
+        title: RichText::plain("Test"),
+        initial_data_source: InitialDataSource { properties: props },
+        icon: None,
+        cover: None,
+        is_inline: None,
+    };
+    let err = req.validate_local().unwrap_err();
+    assert!(err.to_lowercase().contains("title"), "expected title-prop hint: {err}");
+}
+
+#[test]
+fn create_database_validate_local_rejects_empty_properties() {
+    let req = CreateDatabaseRequest {
+        parent: CreateDatabaseParent::page(PageId::parse(PAGE_ID_HEX).unwrap()),
+        title: RichText::plain("Test"),
+        initial_data_source: InitialDataSource { properties: HashMap::new() },
+        icon: None,
+        cover: None,
+        is_inline: None,
+    };
+    let err = req.validate_local().unwrap_err();
+    assert!(err.to_lowercase().contains("empty"), "expected empty hint: {err}");
+}
+
+#[test]
+fn create_database_validate_local_accepts_title_present() {
+    let mut props = HashMap::new();
+    props.insert(
+        "Name".to_string(),
+        PropertySchema::Title { title: EmptyConfig {} },
+    );
+    let req = CreateDatabaseRequest {
+        parent: CreateDatabaseParent::page(PageId::parse(PAGE_ID_HEX).unwrap()),
+        title: RichText::plain("Test"),
+        initial_data_source: InitialDataSource { properties: props },
+        icon: None,
+        cover: None,
+        is_inline: None,
+    };
+    assert!(req.validate_local().is_ok());
+}
+
+// === end create_database ==================================================
 
 #[tokio::test]
 async fn create_data_source_sends_typed_parent() {

@@ -118,6 +118,33 @@ pub struct CreateDataSourceParams {
     pub properties: serde_json::Value,
 }
 
+// === Admin tier params ====================================================
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct DbCreateParams {
+    /// Parent page ID (32-hex or dashed, or a page URL). Must be a
+    /// regular page — databases cannot parent other databases.
+    pub parent_page_id: String,
+    /// Database title (plain text; multi-run rich text is CLI-only).
+    pub title: String,
+    /// Initial properties schema keyed by property name. The map
+    /// must contain at least one `title`-typed property. Example:
+    /// `{"Name": {"type": "title", "title": {}}, "Priority":
+    /// {"type": "select", "select": {"options": [{"name": "High"}]}}}`.
+    /// Call `notion-cli schema property-schema --pretty` for the full shape.
+    pub properties: serde_json::Value,
+    /// Icon: emoji literal (e.g. `"🚀"`) OR `http(s)://` URL. The handler
+    /// parses URLs as `external`, everything else as `emoji`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+    /// Cover image URL (URL only — Notion has no emoji-cover form).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cover: Option<String>,
+    /// Mark as inline (rendered inside the parent page).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_inline: Option<bool>,
+}
+
 // === Block params =========================================================
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]

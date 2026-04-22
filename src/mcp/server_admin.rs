@@ -1,115 +1,64 @@
-//! MCP stdio server — two surface variants, selected by the
-//! `--allow-write` flag.
+//! Admin MCP tier — 12 write tools + admin lifecycle ops.
+//!
+//! # Opt-in via `--allow-admin`
+//!
+//! Admin ops (`db create`, `ds update`, `ds add-relation`, `page move`)
+//! are gated behind a separate flag from `--allow-write`. This is
+//! **tool-exposure policy**, NOT a security boundary (D3): an agent
+//! with admin-scoped integration token + code execution can hit the
+//! API directly. What the flag actually provides:
+//!
+//! 1. **Prompt-injection attenuation**: admin tools absent from the
+//!    agent's tool menu → excluded from its planning surface.
+//! 2. **Accidental-action prevention**: default Hermes profiles
+//!    expose no admin tools → operator can't fat-finger schema
+//!    mutation through a read-or-write-only agent.
+//!
+//! # Module boundary invariant (D5)
+//!
+//! Admin-only tool declarations live ONLY in this file. The D13
+//! snapshot regression test asserts `tools/list` returns the exact
+//! expected set per tier — cross-tier drift trips the test.
+//!
+//! # v0.3 scaffold status
+//!
+//! Currently exposes the same 12 tools as `server_write.rs`. Admin
+//! tools land per-command:
+//! - `db_create` (task 18)
+//! - `ds_update` (task 19)
+//! - `ds_add_relation` (task 20)
+//! - `page_move` (task 22)
+//!
+//! `users list/get` and `comments list/create` are CLI-only
+//! (D9/D10) — do NOT add them here.
 
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use rmcp::handler::server::wrapper::Parameters;
-use rmcp::model::{CallToolResult, Content};
+use rmcp::model::CallToolResult;
 use rmcp::transport::stdio;
 use rmcp::{tool, tool_router, ErrorData, ServiceExt};
 
 use crate::api::NotionClient;
 use crate::mcp::audit::AuditLog;
+use crate::mcp::common::{to_result, Inner};
 use crate::mcp::handlers;
 use crate::mcp::params::{
-    AppendBlockChildrenParams, CreateDataSourceParams, CreatePageParams, DeleteBlockParams,
-    GetBlockParams, GetDataSourceParams, GetPageParams, ListBlockChildrenParams,
-    QueryDataSourceParams, SearchParams, UpdateBlockParams, UpdatePageParams,
+    AppendBlockChildrenParams, CreateDataSourceParams, CreatePageParams, DbCreateParams,
+    DeleteBlockParams, GetBlockParams, GetDataSourceParams, GetPageParams,
+    ListBlockChildrenParams, QueryDataSourceParams, SearchParams, UpdateBlockParams,
+    UpdatePageParams,
 };
 
-struct Inner {
-    client: NotionClient,
-    audit: AuditLog,
-}
-
-// === Read-only surface ====================================================
-
 #[derive(Clone)]
-pub struct NotionReadOnly {
-    inner: Arc<Inner>,
+pub struct NotionAdmin {
+    inner: std::sync::Arc<Inner>,
 }
 
 #[tool_router(server_handler)]
-impl NotionReadOnly {
-    #[tool(
-        name = "get_page",
-        description = "Retrieve a Notion page by ID. Returns the page object wrapped in an untrusted-source envelope."
-    )]
-    async fn get_page(
-        &self,
-        params: Parameters<GetPageParams>,
-    ) -> Result<CallToolResult, ErrorData> {
-        Ok(to_result(&handlers::get_page(&self.inner.client, params.0).await?))
-    }
+impl NotionAdmin {
+    // --- reads (same as RO/Write tiers) -----------------------------
 
-    #[tool(
-        name = "get_data_source",
-        description = "Retrieve a Notion data source (schema + metadata) by ID."
-    )]
-    async fn get_data_source(
-        &self,
-        params: Parameters<GetDataSourceParams>,
-    ) -> Result<CallToolResult, ErrorData> {
-        Ok(to_result(&handlers::get_data_source(&self.inner.client, params.0).await?))
-    }
-
-    #[tool(
-        name = "query_data_source",
-        description = "Query pages inside a data source with optional filter, sort, and pagination. Returns a paginated list of pages."
-    )]
-    async fn query_data_source(
-        &self,
-        params: Parameters<QueryDataSourceParams>,
-    ) -> Result<CallToolResult, ErrorData> {
-        Ok(to_result(&handlers::query_data_source(&self.inner.client, params.0).await?))
-    }
-
-    #[tool(
-        name = "search",
-        description = "Full-text search across Notion pages and data sources the integration can access."
-    )]
-    async fn search(
-        &self,
-        params: Parameters<SearchParams>,
-    ) -> Result<CallToolResult, ErrorData> {
-        Ok(to_result(&handlers::search(&self.inner.client, params.0).await?))
-    }
-
-    #[tool(
-        name = "get_block",
-        description = "Retrieve a single Notion block by ID."
-    )]
-    async fn get_block(
-        &self,
-        params: Parameters<GetBlockParams>,
-    ) -> Result<CallToolResult, ErrorData> {
-        Ok(to_result(&handlers::get_block(&self.inner.client, params.0).await?))
-    }
-
-    #[tool(
-        name = "list_block_children",
-        description = "List child blocks of a parent block (a page ID is also a block ID). Returns paginated results."
-    )]
-    async fn list_block_children(
-        &self,
-        params: Parameters<ListBlockChildrenParams>,
-    ) -> Result<CallToolResult, ErrorData> {
-        Ok(to_result(
-            &handlers::list_block_children(&self.inner.client, params.0).await?,
-        ))
-    }
-}
-
-// === Full surface (read + write) =========================================
-
-#[derive(Clone)]
-pub struct NotionFull {
-    inner: Arc<Inner>,
-}
-
-#[tool_router(server_handler)]
-impl NotionFull {
     #[tool(name = "get_page", description = "Retrieve a Notion page by ID.")]
     async fn get_page(
         &self,
@@ -150,6 +99,32 @@ impl NotionFull {
     ) -> Result<CallToolResult, ErrorData> {
         Ok(to_result(&handlers::search(&self.inner.client, params.0).await?))
     }
+
+    #[tool(
+        name = "get_block",
+        description = "Retrieve a single Notion block by ID."
+    )]
+    async fn get_block(
+        &self,
+        params: Parameters<GetBlockParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        Ok(to_result(&handlers::get_block(&self.inner.client, params.0).await?))
+    }
+
+    #[tool(
+        name = "list_block_children",
+        description = "List child blocks of a parent block (a page ID is also a block ID). Paginated."
+    )]
+    async fn list_block_children(
+        &self,
+        params: Parameters<ListBlockChildrenParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        Ok(to_result(
+            &handlers::list_block_children(&self.inner.client, params.0).await?,
+        ))
+    }
+
+    // --- writes (same as Write tier) --------------------------------
 
     #[tool(
         name = "create_page",
@@ -210,32 +185,8 @@ impl NotionFull {
     }
 
     #[tool(
-        name = "get_block",
-        description = "Retrieve a single Notion block by ID."
-    )]
-    async fn get_block(
-        &self,
-        params: Parameters<GetBlockParams>,
-    ) -> Result<CallToolResult, ErrorData> {
-        Ok(to_result(&handlers::get_block(&self.inner.client, params.0).await?))
-    }
-
-    #[tool(
-        name = "list_block_children",
-        description = "List child blocks of a parent block (a page ID is also a block ID). Paginated."
-    )]
-    async fn list_block_children(
-        &self,
-        params: Parameters<ListBlockChildrenParams>,
-    ) -> Result<CallToolResult, ErrorData> {
-        Ok(to_result(
-            &handlers::list_block_children(&self.inner.client, params.0).await?,
-        ))
-    }
-
-    #[tool(
         name = "append_block_children",
-        description = "Append new child blocks to a parent block. Children are block bodies (e.g. paragraph, heading_1, to_do). Write operation — audited."
+        description = "Append new child blocks to a parent block. Write operation — audited."
     )]
     async fn append_block_children(
         &self,
@@ -286,38 +237,53 @@ impl NotionFull {
         );
         Ok(to_result(&result?))
     }
+
+    // --- admin lifecycle ops ---------------------------------------
+    //
+    // Reserved for:
+    //   - ds_update          (task 19, #2)
+    //   - ds_add_relation    (task 20, #3)
+    //   - page_move          (task 22, #4)
+    //
+    // DO NOT add users/comments here — those are CLI-only in v0.3
+    // (D9/D10). Move to v0.4 if real agent demand emerges.
+
+    #[tool(
+        name = "db_create",
+        description = "Create a new database container under a parent page with an initial data-source schema. Admin operation — audited. `properties` must include at least one `title`-typed entry."
+    )]
+    async fn db_create(
+        &self,
+        params: Parameters<DbCreateParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let target = params.0.parent_page_id.clone();
+        let result = handlers::db_create(&self.inner.client, params.0).await;
+        self.inner.audit.record(
+            "db_create",
+            Some(&target),
+            result.as_ref().map(|_| ()).map_err(|e| e.message.as_ref()),
+        );
+        Ok(to_result(&result?))
+    }
 }
 
-// === Entry points =========================================================
-
-pub async fn run_read_only(client: NotionClient) -> anyhow::Result<()> {
-    let server = NotionReadOnly {
-        inner: Arc::new(Inner {
-            client,
-            audit: AuditLog::default(),
-        }),
-    };
-    let service = server.serve(stdio()).await?;
-    service.waiting().await?;
-    Ok(())
-}
-
-pub async fn run_with_write(
+/// Entry point for the admin MCP tier.
+///
+/// # Parameters
+///
+/// - `audit_log_path`: JSONL sink for runtime write ops (same as Write tier).
+/// - `admin_log_path`: JSONL sink for admin lifecycle ops (D6, wired in task 27).
+///   Currently ignored; structural placeholder so the CLI/env surface is
+///   stable from day one.
+pub async fn run_with_admin(
     client: NotionClient,
     audit_log_path: Option<PathBuf>,
+    _admin_log_path: Option<PathBuf>,
 ) -> anyhow::Result<()> {
-    let server = NotionFull {
-        inner: Arc::new(Inner {
-            client,
-            audit: AuditLog::new(audit_log_path),
-        }),
+    let server = NotionAdmin {
+        inner: Inner::arc(client, AuditLog::new(audit_log_path)),
     };
     let service = server.serve(stdio()).await?;
     service.waiting().await?;
     Ok(())
-}
-
-fn to_result(value: &serde_json::Value) -> CallToolResult {
-    let text = serde_json::to_string(value).unwrap_or_else(|_| "{}".to_string());
-    CallToolResult::success(vec![Content::text(text)])
 }

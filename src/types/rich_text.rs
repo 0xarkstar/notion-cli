@@ -29,6 +29,22 @@ pub struct RichText {
     pub href: Option<String>,
 }
 
+impl RichText {
+    /// Build a single-run plain-text vector — the canonical write-path
+    /// form for titles and one-liner rich-text fields.
+    #[must_use]
+    pub fn plain(s: &str) -> Vec<Self> {
+        vec![Self {
+            content: RichTextContent::Text {
+                text: TextContent { content: s.to_string(), link: None },
+            },
+            annotations: Annotations::default(),
+            plain_text: s.to_string(),
+            href: None,
+        }]
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum RichTextContent {
