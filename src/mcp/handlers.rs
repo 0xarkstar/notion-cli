@@ -155,7 +155,15 @@ pub async fn create_page(
         .map(|v| parse_json(v, "children"))
         .transpose()?
         .unwrap_or_default();
-    let req = CreatePageRequest { parent, properties, children };
+    let icon = parse_icon_flag_mcp(p.icon.as_deref())?;
+    let cover = parse_cover_flag_mcp(p.cover.as_deref())?;
+    let req = CreatePageRequest {
+        parent,
+        properties,
+        children,
+        icon: icon.flatten(),
+        cover: cover.flatten(),
+    };
     let page = client.create_page(&req).await.map_err(|e| api_to_rpc(&e))?;
     Ok(wrap_untrusted(&serde_json::to_value(page).map_err(|e| {
         ErrorData::internal_error(format!("serialize: {e}"), None)
@@ -173,10 +181,14 @@ pub async fn update_page(
         .map(|v| parse_json(v, "properties"))
         .transpose()?
         .unwrap_or_default();
+    let icon = parse_icon_flag_mcp(p.icon.as_deref())?;
+    let cover = parse_cover_flag_mcp(p.cover.as_deref())?;
     let req = UpdatePageRequest {
         properties,
         archived: p.archived,
         in_trash: p.in_trash,
+        icon,
+        cover,
     };
     let page = client.update_page(&id, &req).await.map_err(|e| api_to_rpc(&e))?;
     Ok(wrap_untrusted(&serde_json::to_value(page).map_err(|e| {
@@ -300,6 +312,36 @@ fn field_str<'a>(
 
 fn invalid(msg: impl Into<String>) -> ErrorData {
     ErrorData::invalid_params(msg.into(), None)
+}
+
+/// Parse MCP `icon` flag value.
+///
+/// - `None` → field absent (no change to page)
+/// - `Some("none")` case-insensitive → `Some(None)` (clear)
+/// - `Some(value)` → `Some(Some(Icon))` (parse_cli: http prefix → external, else emoji)
+fn parse_icon_flag_mcp(value: Option<&str>) -> Result<Option<Option<Icon>>, ErrorData> {
+    Ok(match value {
+        None => None,
+        Some(v) if v.eq_ignore_ascii_case("none") => Some(None),
+        Some(v) => Some(Some(Icon::parse_cli(v))),
+    })
+}
+
+/// Parse MCP `cover` flag value. Covers accept URLs only — `"none"`
+/// clears, anything else must be a URL.
+fn parse_cover_flag_mcp(value: Option<&str>) -> Result<Option<Option<Cover>>, ErrorData> {
+    Ok(match value {
+        None => None,
+        Some(v) if v.eq_ignore_ascii_case("none") => Some(None),
+        Some(v) if v.starts_with("http://") || v.starts_with("https://") => {
+            Some(Some(Cover::external(v)))
+        }
+        Some(v) => {
+            return Err(invalid(format!(
+                "cover must be a URL (http:// or https://) or 'none' to clear, got: {v}"
+            )));
+        }
+    })
 }
 
 pub async fn ds_add_relation(

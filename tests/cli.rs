@@ -551,6 +551,118 @@ fn ds_update_add_option_emits_merge_delta() {
     assert_eq!(first_color, Some("red"));
 }
 
+// === page update --icon / --cover tristate (D11) =========================
+
+#[test]
+fn page_update_icon_emoji_emits_typed_emoji_body() {
+    let assert = cli()
+        .args([
+            "--check-request",
+            "--raw",
+            "page",
+            "update",
+            VALID_ID,
+            "--icon",
+            "🚀",
+        ])
+        .assert()
+        .success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let parsed: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    let icon_type = parsed.pointer("/body/icon/type").and_then(|v| v.as_str());
+    assert_eq!(icon_type, Some("emoji"));
+    let emoji = parsed.pointer("/body/icon/emoji").and_then(|v| v.as_str());
+    assert_eq!(emoji, Some("🚀"));
+}
+
+#[test]
+fn page_update_icon_none_emits_null() {
+    let assert = cli()
+        .args([
+            "--check-request",
+            "--raw",
+            "page",
+            "update",
+            VALID_ID,
+            "--icon",
+            "none",
+        ])
+        .assert()
+        .success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let parsed: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    let icon_val = parsed.pointer("/body/icon");
+    assert_eq!(
+        icon_val,
+        Some(&serde_json::Value::Null),
+        "--icon none must emit JSON null",
+    );
+}
+
+#[test]
+fn page_update_icon_url_emits_external() {
+    let assert = cli()
+        .args([
+            "--check-request",
+            "--raw",
+            "page",
+            "update",
+            VALID_ID,
+            "--icon",
+            "https://example.com/icon.png",
+        ])
+        .assert()
+        .success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let parsed: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    let icon_type = parsed.pointer("/body/icon/type").and_then(|v| v.as_str());
+    assert_eq!(icon_type, Some("external"));
+}
+
+#[test]
+fn page_update_cover_with_non_url_exits_validation_2() {
+    let assert = cli()
+        .args([
+            "--check-request",
+            "page",
+            "update",
+            VALID_ID,
+            "--cover",
+            "not_a_url",
+        ])
+        .assert()
+        .failure();
+    assert_eq!(assert.get_output().status.code(), Some(2));
+    let err = String::from_utf8_lossy(&assert.get_output().stderr);
+    assert!(
+        err.to_lowercase().contains("url") || err.to_lowercase().contains("http"),
+        "expected URL hint: {err}",
+    );
+}
+
+#[test]
+fn page_update_without_icon_flag_omits_icon_field() {
+    let assert = cli()
+        .args([
+            "--check-request",
+            "--raw",
+            "page",
+            "update",
+            VALID_ID,
+            "--archived",
+            "true",
+        ])
+        .assert()
+        .success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let parsed: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    let body = parsed.get("body").expect("body");
+    assert!(
+        body.get("icon").is_none(),
+        "icon must be absent (tristate: None = skip field): {body}",
+    );
+}
+
 #[test]
 fn db_create_with_url_icon_parses_to_external_shape() {
     let schema_path = write_temp_schema(

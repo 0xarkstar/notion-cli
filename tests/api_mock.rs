@@ -821,6 +821,8 @@ async fn create_page_under_data_source() {
             },
             properties: props,
             children: vec![],
+            icon: None,
+            cover: None,
         })
         .await
         .unwrap();
@@ -846,6 +848,91 @@ async fn update_page_properties() {
                 properties: props,
                 archived: None,
                 in_trash: None,
+                icon: None,
+                cover: None,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(page.id.as_str(), PAGE_ID_HEX);
+}
+
+#[tokio::test]
+async fn update_page_with_icon_tristate_clear_emits_null() {
+    let server = MockServer::start().await;
+    Mock::given(method("PATCH"))
+        .and(path(format!("/v1/pages/{PAGE_ID_HEX}")))
+        .and(body_json(json!({ "icon": null })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(test_page_json(PAGE_ID_HEX)))
+        .mount(&server)
+        .await;
+    let client = make_client(&server);
+    let page = client
+        .update_page(
+            &PageId::parse(PAGE_ID_HEX).unwrap(),
+            &UpdatePageRequest {
+                properties: std::collections::HashMap::new(),
+                archived: None,
+                in_trash: None,
+                icon: Some(None), // tristate: clear
+                cover: None,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(page.id.as_str(), PAGE_ID_HEX);
+}
+
+#[tokio::test]
+async fn update_page_with_icon_set_emoji_emits_typed_shape() {
+    let server = MockServer::start().await;
+    Mock::given(method("PATCH"))
+        .and(path(format!("/v1/pages/{PAGE_ID_HEX}")))
+        .and(body_json(json!({
+            "icon": {"type": "emoji", "emoji": "🚀"}
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(test_page_json(PAGE_ID_HEX)))
+        .mount(&server)
+        .await;
+    let client = make_client(&server);
+    let page = client
+        .update_page(
+            &PageId::parse(PAGE_ID_HEX).unwrap(),
+            &UpdatePageRequest {
+                properties: std::collections::HashMap::new(),
+                archived: None,
+                in_trash: None,
+                icon: Some(Some(Icon::emoji("🚀"))),
+                cover: None,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(page.id.as_str(), PAGE_ID_HEX);
+}
+
+#[tokio::test]
+async fn update_page_with_icon_none_tristate_skips_field() {
+    let server = MockServer::start().await;
+    // The body MUST NOT include `icon` when tristate is None.
+    // body_json is strict equality — presence of an unexpected key
+    // would cause the mock not to match.
+    Mock::given(method("PATCH"))
+        .and(path(format!("/v1/pages/{PAGE_ID_HEX}")))
+        .and(body_json(json!({ "archived": true })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(test_page_json(PAGE_ID_HEX)))
+        .mount(&server)
+        .await;
+    let client = make_client(&server);
+    let page = client
+        .update_page(
+            &PageId::parse(PAGE_ID_HEX).unwrap(),
+            &UpdatePageRequest {
+                properties: std::collections::HashMap::new(),
+                archived: Some(true),
+                in_trash: None,
+                icon: None, // tristate: leave unchanged, skip field
+                cover: None,
             },
         )
         .await
@@ -871,6 +958,8 @@ async fn update_page_archive() {
                 properties: std::collections::HashMap::new(),
                 archived: Some(true),
                 in_trash: None,
+                icon: None,
+                cover: None,
             },
         )
         .await

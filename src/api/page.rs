@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::api::client::NotionClient;
 use crate::api::error::ApiError;
+use crate::types::icon::{Cover, Icon};
 use crate::types::page::Page;
 use crate::types::property::PropertyValue;
 use crate::validation::{DataSourceId, PageId};
@@ -39,9 +40,18 @@ pub struct CreatePageRequest {
     pub properties: HashMap<String, PropertyValue>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub children: Vec<crate::types::block::BlockBody>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<Icon>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cover: Option<Cover>,
 }
 
 /// Request body for `PATCH /v1/pages/{id}`.
+///
+/// `icon` and `cover` are **tristate** via `Option<Option<_>>`:
+/// - `None` → field absent in body → leave unchanged
+/// - `Some(None)` → emitted as JSON `null` → clear
+/// - `Some(Some(v))` → emitted as the value → set
 #[derive(Debug, Clone, Serialize, Default, JsonSchema)]
 pub struct UpdatePageRequest {
     #[serde(skip_serializing_if = "HashMap::is_empty")]
@@ -50,6 +60,10 @@ pub struct UpdatePageRequest {
     pub archived: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub in_trash: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<Option<Icon>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cover: Option<Option<Cover>>,
 }
 
 impl NotionClient {

@@ -135,20 +135,20 @@
   "hotPaths": [
     {
       "path": "src/mcp/handlers.rs",
-      "accessCount": 11,
-      "lastAccessed": 1776865289664,
+      "accessCount": 14,
+      "lastAccessed": 1776866646625,
+      "type": "file"
+    },
+    {
+      "path": "tests/api_mock.rs",
+      "accessCount": 13,
+      "lastAccessed": 1776866816037,
       "type": "file"
     },
     {
       "path": "src/api/data_source.rs",
       "accessCount": 8,
       "lastAccessed": 1776865235859,
-      "type": "file"
-    },
-    {
-      "path": "tests/api_mock.rs",
-      "accessCount": 8,
-      "lastAccessed": 1776865336291,
       "type": "file"
     },
     {
@@ -165,14 +165,26 @@
     },
     {
       "path": "src/mcp/params.rs",
-      "accessCount": 5,
-      "lastAccessed": 1776865274912,
+      "accessCount": 6,
+      "lastAccessed": 1776866664514,
+      "type": "file"
+    },
+    {
+      "path": "tests/mcp_handlers.rs",
+      "accessCount": 6,
+      "lastAccessed": 1776866778479,
       "type": "file"
     },
     {
       "path": "tests/mcp_server.rs",
       "accessCount": 5,
       "lastAccessed": 1776865314662,
+      "type": "file"
+    },
+    {
+      "path": "tests/cli.rs",
+      "accessCount": 5,
+      "lastAccessed": 1776866828004,
       "type": "file"
     },
     {
@@ -194,9 +206,15 @@
       "type": "file"
     },
     {
-      "path": "tests/cli.rs",
+      "path": "src/api/page.rs",
       "accessCount": 4,
-      "lastAccessed": 1776865353534,
+      "lastAccessed": 1776866618786,
+      "type": "file"
+    },
+    {
+      "path": "src/cli/page.rs",
+      "accessCount": 4,
+      "lastAccessed": 1776866706629,
       "type": "file"
     },
     {
@@ -236,15 +254,15 @@
       "type": "file"
     },
     {
-      "path": "src/cli/page.rs",
-      "accessCount": 3,
-      "lastAccessed": 1776861638579,
-      "type": "file"
-    },
-    {
       "path": "src/api/database.rs",
       "accessCount": 3,
       "lastAccessed": 1776861720613,
+      "type": "file"
+    },
+    {
+      "path": "tests/block_api.rs",
+      "accessCount": 3,
+      "lastAccessed": 1776866767946,
       "type": "file"
     },
     {
@@ -293,12 +311,6 @@
       "path": "src/types/page.rs",
       "accessCount": 1,
       "lastAccessed": 1776852009402,
-      "type": "file"
-    },
-    {
-      "path": "src/api/page.rs",
-      "accessCount": 1,
-      "lastAccessed": 1776852011709,
       "type": "file"
     },
     {

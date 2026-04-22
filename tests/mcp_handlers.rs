@@ -216,6 +216,8 @@ async fn handler_create_page_data_source_parent() {
             parent_page_id: None,
             properties: json!({"Done": {"type": "checkbox", "checkbox": true}}),
             children: None,
+            icon: None,
+            cover: None,
         },
     )
     .await
@@ -239,6 +241,8 @@ async fn handler_create_page_page_parent() {
             parent_page_id: Some(PAGE_ID.into()),
             properties: json!({}),
             children: None,
+            icon: None,
+            cover: None,
         },
     )
     .await
@@ -257,6 +261,8 @@ async fn handler_create_page_rejects_both_parents() {
             parent_page_id: Some(PAGE_ID.into()),
             properties: json!({}),
             children: None,
+            icon: None,
+            cover: None,
         },
     )
     .await
@@ -275,6 +281,8 @@ async fn handler_create_page_rejects_no_parent() {
             parent_page_id: None,
             properties: json!({}),
             children: None,
+            icon: None,
+            cover: None,
         },
     )
     .await
@@ -298,6 +306,8 @@ async fn handler_update_page() {
             properties: Some(json!({"Done": {"type": "checkbox", "checkbox": false}})),
             archived: None,
             in_trash: Some(true),
+            icon: None,
+            cover: None,
         },
     )
     .await

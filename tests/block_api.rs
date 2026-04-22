@@ -394,6 +394,8 @@ async fn create_page_with_children_inline() {
         },
         properties: props,
         children: vec![BlockBody::heading_1("H1"), BlockBody::paragraph("body")],
+        icon: None,
+        cover: None,
     };
     let page = client.create_page(&req).await.unwrap();
     assert_eq!(page.id.as_str(), PARENT_PAGE);
@@ -433,6 +435,8 @@ async fn create_page_omits_empty_children() {
         },
         properties: std::collections::HashMap::new(),
         children: vec![],
+        icon: None,
+        cover: None,
     };
     client.create_page(&req).await.unwrap();
 }

@@ -85,10 +85,16 @@ pub struct CreatePageParams {
     pub properties: serde_json::Value,
     /// Optional page body as a JSON array of block bodies.
     /// Preferred over create + append — sets up the page and its
-    /// content in one API call. Example:
-    /// `[{"type":"heading_1","heading_1":{"rich_text":[{"type":"text","text":{"content":"Title"}}]}}]`.
+    /// content in one API call.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub children: Option<serde_json::Value>,
+    /// Icon: emoji literal (e.g. `"🚀"`) or `http(s)://` URL.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+    /// Cover image URL (http(s)://, URL-only — Notion covers have no
+    /// emoji form).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cover: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -103,6 +109,14 @@ pub struct UpdatePageParams {
     /// Set `in_trash` flag. Preferred over `archived` on API 2025-09-03+.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub in_trash: Option<bool>,
+    /// Icon: emoji literal or `http(s)://` URL, or `"none"` to clear.
+    /// Absent string → leave unchanged (tristate, per D11).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+    /// Cover URL (`http(s)://`) or `"none"` to clear. Absent → leave
+    /// unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cover: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
