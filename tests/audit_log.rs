@@ -33,6 +33,10 @@ fn record_appends_jsonl_entries() {
     assert_eq!(first["tool"], "create_page");
     assert_eq!(first["target"], "abc123");
     assert_eq!(first["result"], "ok");
+    assert_eq!(
+        first["privilege"], "write",
+        "v0.3 entries must carry privilege=\"write\" for the write sink",
+    );
     assert!(first["error"].is_null());
     assert!(first["ts"].as_u64().unwrap() > 0);
 
@@ -46,6 +50,78 @@ fn record_appends_jsonl_entries() {
     assert!(third["target"].is_null());
 
     fs::remove_file(&path).ok();
+}
+
+// === Admin sink (D6) =====================================================
+
+#[test]
+fn record_admin_writes_to_admin_sink_only() {
+    let write_path = tmp_path("split-write");
+    let admin_path = tmp_path("split-admin");
+    let log = AuditLog::new_with_admin(Some(write_path.clone()), Some(admin_path.clone()));
+
+    log.record("update_page", Some("pg-1"), Ok(()));
+    log.record_admin("db_create", Some("pg-2"), Ok(()));
+    log.record_admin("ds_update:remove_property", Some("ds-1"), Err("nope"));
+
+    let write_contents = fs::read_to_string(&write_path).expect("write audit file");
+    let admin_contents = fs::read_to_string(&admin_path).expect("admin audit file");
+    assert_eq!(
+        write_contents.lines().count(),
+        1,
+        "write sink must see exactly the one record() call — got:\n{write_contents}",
+    );
+    assert_eq!(
+        admin_contents.lines().count(),
+        2,
+        "admin sink must see exactly the two record_admin() calls — got:\n{admin_contents}",
+    );
+
+    let admin_first: serde_json::Value =
+        serde_json::from_str(admin_contents.lines().next().unwrap()).unwrap();
+    assert_eq!(admin_first["privilege"], "admin");
+    assert_eq!(admin_first["tool"], "db_create");
+
+    let admin_second: serde_json::Value =
+        serde_json::from_str(admin_contents.lines().nth(1).unwrap()).unwrap();
+    assert_eq!(admin_second["tool"], "ds_update:remove_property");
+    assert_eq!(admin_second["result"], "err");
+
+    fs::remove_file(&write_path).ok();
+    fs::remove_file(&admin_path).ok();
+}
+
+#[test]
+fn record_admin_without_admin_path_is_a_noop() {
+    let write_path = tmp_path("admin-noop");
+    // write sink set; admin sink unset
+    let log = AuditLog::new_with_admin(Some(write_path.clone()), None);
+    log.record_admin("db_create", Some("pg"), Ok(()));
+    // write path must remain empty (record_admin goes to admin sink only)
+    let write_contents = fs::read_to_string(&write_path).unwrap_or_default();
+    assert!(
+        write_contents.is_empty(),
+        "record_admin must not fall through to the write sink: {write_contents:?}",
+    );
+    fs::remove_file(&write_path).ok();
+}
+
+#[test]
+fn record_falls_through_to_write_sink_even_with_admin_path_set() {
+    // Sanity: record() must still go to the write sink, not admin.
+    let write_path = tmp_path("write-isolation-w");
+    let admin_path = tmp_path("write-isolation-a");
+    let log = AuditLog::new_with_admin(Some(write_path.clone()), Some(admin_path.clone()));
+    log.record("update_page", Some("pg"), Ok(()));
+    let admin_contents = fs::read_to_string(&admin_path).unwrap_or_default();
+    assert!(
+        admin_contents.is_empty(),
+        "record() must not leak into the admin sink: {admin_contents:?}",
+    );
+    let write_contents = fs::read_to_string(&write_path).expect("write sink");
+    assert_eq!(write_contents.lines().count(), 1);
+    fs::remove_file(&write_path).ok();
+    fs::remove_file(&admin_path).ok();
 }
 
 #[test]

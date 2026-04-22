@@ -4,6 +4,7 @@
 //! `@notionhq/notion-mcp-server` gets wrong on API 2025-09-03+.
 //! `ds update` (v0.3) adds single-delta schema mutation per D2.
 
+use std::io::{BufRead, IsTerminal, Write};
 use std::path::PathBuf;
 
 use clap::{Subcommand, ValueEnum};
@@ -397,9 +398,12 @@ fn build_update(cmd: &UpdateCmd) -> Result<(DataSourceId, UpdateDataSourceReques
             Ok((ds_id, req))
         }
         UpdateCmd::RemoveProperty { id, name, yes } => {
-            if !*yes {
-                return Err(CliError::Usage(format!(
-                    "remove-property '{name}' is destructive; pass --yes to confirm"
+            if !*yes && !confirm_destructive_tty(
+                &format!("remove property '{name}' from this data source"),
+            )? {
+                return Err(CliError::Validation(format!(
+                    "remove-property '{name}' is destructive; pass --yes to \
+                     confirm (non-TTY) or answer 'y' at the interactive prompt"
                 )));
             }
             let ds_id = parse_ds_id(id)?;
@@ -443,6 +447,27 @@ fn build_update(cmd: &UpdateCmd) -> Result<(DataSourceId, UpdateDataSourceReques
 fn parse_ds_id(s: &str) -> Result<DataSourceId, CliError> {
     DataSourceId::from_url_or_id(s)
         .map_err(|e| CliError::Validation(format!("data source id: {e}")))
+}
+
+/// TTY-aware destructive confirmation (D1).
+///
+/// - Non-TTY (agent, script, pipe): returns `Ok(false)` — caller
+///   should error with `CliError::Validation` (exit 2).
+/// - TTY: prompts `"{action} [y/N]: "` on stderr, reads stdin; any
+///   response beginning with `y` or `Y` accepts.
+fn confirm_destructive_tty(action: &str) -> Result<bool, CliError> {
+    if !std::io::stdin().is_terminal() {
+        return Ok(false);
+    }
+    let mut err = std::io::stderr();
+    write!(err, "About to {action}. Proceed? [y/N]: ").map_err(CliError::Io)?;
+    err.flush().map_err(CliError::Io)?;
+    let mut input = String::new();
+    std::io::stdin()
+        .lock()
+        .read_line(&mut input)
+        .map_err(CliError::Io)?;
+    Ok(matches!(input.trim().chars().next(), Some('y' | 'Y')))
 }
 
 fn parse_color(c: Option<&str>) -> Result<Option<crate::types::common::Color>, String> {

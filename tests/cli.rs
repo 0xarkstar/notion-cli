@@ -277,10 +277,10 @@ fn ds_update_add_property_check_request_patches_data_source_path() {
 }
 
 #[test]
-fn ds_update_remove_property_without_yes_exits_64() {
-    // Remove-property is destructive; --yes is required at the CLI
-    // surface when not running in a TTY (D1). assert_cmd never has
-    // a TTY, so absence of --yes must trip the usage guard.
+fn ds_update_remove_property_without_yes_exits_2_in_non_tty() {
+    // D1: destructive ops in non-TTY contexts (agents, scripts,
+    // assert_cmd) require --yes. Without it, exit 2 (Validation),
+    // not 64 — this is a safety gate, not a usage error.
     let assert = cli()
         .args([
             "--check-request",
@@ -293,7 +293,7 @@ fn ds_update_remove_property_without_yes_exits_64() {
         ])
         .assert()
         .failure();
-    assert_eq!(assert.get_output().status.code(), Some(64));
+    assert_eq!(assert.get_output().status.code(), Some(2));
     let err = String::from_utf8_lossy(&assert.get_output().stderr);
     assert!(
         err.to_lowercase().contains("destructive") || err.to_lowercase().contains("--yes"),

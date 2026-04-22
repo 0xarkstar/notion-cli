@@ -147,14 +147,20 @@
     },
     {
       "path": "src/mcp/server_admin.rs",
-      "accessCount": 9,
-      "lastAccessed": 1776876643705,
+      "accessCount": 11,
+      "lastAccessed": 1776878329047,
+      "type": "file"
+    },
+    {
+      "path": "src/cli/ds.rs",
+      "accessCount": 10,
+      "lastAccessed": 1776878394768,
       "type": "file"
     },
     {
       "path": "tests/cli.rs",
-      "accessCount": 9,
-      "lastAccessed": 1776878184381,
+      "accessCount": 10,
+      "lastAccessed": 1776878401607,
       "type": "file"
     },
     {
@@ -182,12 +188,6 @@
       "type": "file"
     },
     {
-      "path": "src/cli/ds.rs",
-      "accessCount": 7,
-      "lastAccessed": 1776865257638,
-      "type": "file"
-    },
-    {
       "path": "src/mcp/params.rs",
       "accessCount": 7,
       "lastAccessed": 1776876618007,
@@ -209,6 +209,12 @@
       "path": "src/api/page.rs",
       "accessCount": 5,
       "lastAccessed": 1776876592216,
+      "type": "file"
+    },
+    {
+      "path": "src/mcp/audit.rs",
+      "accessCount": 5,
+      "lastAccessed": 1776878297360,
       "type": "file"
     },
     {
@@ -245,12 +251,6 @@
       "path": "src/mcp/server.rs",
       "accessCount": 3,
       "lastAccessed": 1776860304097,
-      "type": "file"
-    },
-    {
-      "path": "src/mcp/audit.rs",
-      "accessCount": 3,
-      "lastAccessed": 1776860369573,
       "type": "file"
     },
     {
@@ -317,6 +317,12 @@
       "path": "src/cli/error.rs",
       "accessCount": 2,
       "lastAccessed": 1776861774871,
+      "type": "file"
+    },
+    {
+      "path": "tests/audit_log.rs",
+      "accessCount": 2,
+      "lastAccessed": 1776878360503,
       "type": "file"
     },
     {

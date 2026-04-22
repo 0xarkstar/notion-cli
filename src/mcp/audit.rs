@@ -1,8 +1,18 @@
-//! Append-only audit log for MCP write operations.
+//! Append-only audit log for MCP write + admin operations.
+//!
+//! Two sinks (D6):
+//! - `NOTION_CLI_AUDIT_LOG` — runtime writes
+//!   (`create_page`, `update_page`, `create_data_source`, block mutations).
+//! - `NOTION_CLI_ADMIN_LOG` — admin lifecycle ops
+//!   (`db_create`, `ds_update:*`, `ds_add_relation`, `page_move`).
+//!
+//! Operators can `grep`-split by file for "what did agents do?" vs
+//! "what did I mutate in the schema?" without jq. Every entry also
+//! carries an explicit `privilege` field (`"write"` or `"admin"`)
+//! so the two logs stay self-describing if ever merged.
 //!
 //! Best-effort: failures are logged to stderr but do not fail the
-//! tool call. The log path is configured via `--audit-log` (CLI) or
-//! `NOTION_CLI_AUDIT_LOG` env var. When unset, auditing is disabled.
+//! tool call. When the relevant path is unset, logging is skipped.
 
 use std::fs::OpenOptions;
 use std::io::Write;
@@ -15,6 +25,7 @@ use serde::Serialize;
 #[derive(Debug, Serialize)]
 struct AuditEntry<'a> {
     ts: u64,
+    privilege: &'a str,
     tool: &'a str,
     target: Option<&'a str>,
     result: &'a str,
@@ -23,24 +34,68 @@ struct AuditEntry<'a> {
 
 #[derive(Default)]
 pub struct AuditLog {
-    path: Option<PathBuf>,
-    // Mutex to serialize appends across concurrent tool calls.
+    write_path: Option<PathBuf>,
+    admin_path: Option<PathBuf>,
+    // Mutex to serialize appends across concurrent tool calls (both sinks).
     writer: Mutex<()>,
 }
 
 impl AuditLog {
+    /// Construct with write-tier logging only. Admin ops will not be
+    /// audited. Compat with v0.2 behaviour — callers upgrade to
+    /// [`Self::new_with_admin`] when they need the admin sink.
     #[must_use]
-    pub fn new(path: Option<PathBuf>) -> Self {
-        Self { path, writer: Mutex::new(()) }
+    pub fn new(write_path: Option<PathBuf>) -> Self {
+        Self {
+            write_path,
+            admin_path: None,
+            writer: Mutex::new(()),
+        }
     }
 
+    /// Construct with both sinks. Either path can be `None` to
+    /// disable that tier individually.
+    #[must_use]
+    pub fn new_with_admin(
+        write_path: Option<PathBuf>,
+        admin_path: Option<PathBuf>,
+    ) -> Self {
+        Self {
+            write_path,
+            admin_path,
+            writer: Mutex::new(()),
+        }
+    }
+
+    /// Record a runtime write operation. Goes to the write sink.
     pub fn record(
         &self,
         tool: &str,
         target: Option<&str>,
         result: Result<(), &str>,
     ) {
-        let Some(path) = &self.path else { return };
+        self.append(self.write_path.as_deref(), "write", tool, target, result);
+    }
+
+    /// Record an admin lifecycle operation. Goes to the admin sink.
+    pub fn record_admin(
+        &self,
+        tool: &str,
+        target: Option<&str>,
+        result: Result<(), &str>,
+    ) {
+        self.append(self.admin_path.as_deref(), "admin", tool, target, result);
+    }
+
+    fn append(
+        &self,
+        path: Option<&std::path::Path>,
+        privilege: &str,
+        tool: &str,
+        target: Option<&str>,
+        result: Result<(), &str>,
+    ) {
+        let Some(path) = path else { return };
         let ts = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_secs())
@@ -49,7 +104,14 @@ impl AuditLog {
             Ok(()) => ("ok", None),
             Err(msg) => ("err", Some(msg)),
         };
-        let entry = AuditEntry { ts, tool, target, result: result_str, error };
+        let entry = AuditEntry {
+            ts,
+            privilege,
+            tool,
+            target,
+            result: result_str,
+            error,
+        };
         let line = match serde_json::to_string(&entry) {
             Ok(s) => s,
             Err(e) => {
@@ -65,9 +127,6 @@ impl AuditLog {
 }
 
 fn append_line(path: &std::path::Path, line: &str) -> std::io::Result<()> {
-    let mut f = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)?;
+    let mut f = OpenOptions::new().create(true).append(true).open(path)?;
     writeln!(f, "{line}")
 }

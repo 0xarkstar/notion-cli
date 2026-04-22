@@ -250,7 +250,7 @@ impl NotionAdmin {
 
     #[tool(
         name = "db_create",
-        description = "Create a new database container under a parent page with an initial data-source schema. Admin operation — audited. `properties` must include at least one `title`-typed entry."
+        description = "Create a new database container under a parent page with an initial data-source schema. Admin operation — audited to NOTION_CLI_ADMIN_LOG. `properties` must include at least one `title`-typed entry."
     )]
     async fn db_create(
         &self,
@@ -258,7 +258,7 @@ impl NotionAdmin {
     ) -> Result<CallToolResult, ErrorData> {
         let target = params.0.parent_page_id.clone();
         let result = handlers::db_create(&self.inner.client, params.0).await;
-        self.inner.audit.record(
+        self.inner.audit.record_admin(
             "db_create",
             Some(&target),
             result.as_ref().map(|_| ()).map_err(|e| e.message.as_ref()),
@@ -268,7 +268,7 @@ impl NotionAdmin {
 
     #[tool(
         name = "ds_update",
-        description = "Mutate a data source's schema. `action` dispatches: add_property, remove_property (destructive — requires confirm=true AND NOTION_CLI_ADMIN_CONFIRMED=1 env), rename_property, add_option, bulk (non-atomic escape). Single-delta default per invocation. Admin operation — audited."
+        description = "Mutate a data source's schema. `action` dispatches: add_property, remove_property (destructive — requires confirm=true AND NOTION_CLI_ADMIN_CONFIRMED=1 env), rename_property, add_option, bulk (non-atomic escape). Single-delta default per invocation. Admin operation — audited to NOTION_CLI_ADMIN_LOG."
     )]
     async fn ds_update(
         &self,
@@ -277,7 +277,7 @@ impl NotionAdmin {
         let target = params.0.data_source_id.clone();
         let action = params.0.action.clone();
         let result = handlers::ds_update(&self.inner.client, params.0).await;
-        self.inner.audit.record(
+        self.inner.audit.record_admin(
             &format!("ds_update:{action}"),
             Some(&target),
             result.as_ref().map(|_| ()).map_err(|e| e.message.as_ref()),
@@ -287,7 +287,7 @@ impl NotionAdmin {
 
     #[tool(
         name = "ds_add_relation",
-        description = "Add a relation property to a data source. Convenience wrapper over ds_update — generates correct dual_property/single_property shape with data_source_id (not database_id). Exactly one of `backlink` (two-way with named reciprocal property), `one_way` (no backlink), or `self` (self-referential, same DS as source) required. Pre-flight: GET on target verifies existence + integration sharing. Admin operation — audited."
+        description = "Add a relation property to a data source. Convenience wrapper over ds_update — generates correct dual_property/single_property shape with data_source_id (not database_id). Exactly one of `backlink` (two-way with named reciprocal property), `one_way` (no backlink), or `self` (self-referential, same DS as source) required. Pre-flight: GET on target verifies existence + integration sharing. Admin operation — audited to NOTION_CLI_ADMIN_LOG."
     )]
     async fn ds_add_relation(
         &self,
@@ -295,7 +295,7 @@ impl NotionAdmin {
     ) -> Result<CallToolResult, ErrorData> {
         let target = params.0.source_data_source_id.clone();
         let result = handlers::ds_add_relation(&self.inner.client, params.0).await;
-        self.inner.audit.record(
+        self.inner.audit.record_admin(
             "ds_add_relation",
             Some(&target),
             result.as_ref().map(|_| ()).map_err(|e| e.message.as_ref()),
@@ -305,7 +305,7 @@ impl NotionAdmin {
 
     #[tool(
         name = "page_move",
-        description = "Relocate a page to a new parent. Uses POST /v1/pages/{id}/move — the dedicated endpoint introduced 2026-01-15. PATCH does not accept parent mutation. Exactly one of target_page_id or target_data_source_id required. Restrictions: source must be a regular page (not database), integration needs edit access to new parent, cross-workspace rejected. Admin operation — audited."
+        description = "Relocate a page to a new parent. Uses POST /v1/pages/{id}/move — the dedicated endpoint introduced 2026-01-15. PATCH does not accept parent mutation. Exactly one of target_page_id or target_data_source_id required. Restrictions: source must be a regular page (not database), integration needs edit access to new parent, cross-workspace rejected. Admin operation — audited to NOTION_CLI_ADMIN_LOG."
     )]
     async fn page_move(
         &self,
@@ -313,7 +313,7 @@ impl NotionAdmin {
     ) -> Result<CallToolResult, ErrorData> {
         let target = params.0.page_id.clone();
         let result = handlers::page_move(&self.inner.client, params.0).await;
-        self.inner.audit.record(
+        self.inner.audit.record_admin(
             "page_move",
             Some(&target),
             result.as_ref().map(|_| ()).map_err(|e| e.message.as_ref()),
@@ -327,16 +327,19 @@ impl NotionAdmin {
 /// # Parameters
 ///
 /// - `audit_log_path`: JSONL sink for runtime write ops (same as Write tier).
-/// - `admin_log_path`: JSONL sink for admin lifecycle ops (D6, wired in task 27).
-///   Currently ignored; structural placeholder so the CLI/env surface is
-///   stable from day one.
+/// - `admin_log_path`: JSONL sink for admin lifecycle ops (D6).
+///   Wired independently of `audit_log_path` so operators can
+///   grep-split agent activity vs structural mutation.
 pub async fn run_with_admin(
     client: NotionClient,
     audit_log_path: Option<PathBuf>,
-    _admin_log_path: Option<PathBuf>,
+    admin_log_path: Option<PathBuf>,
 ) -> anyhow::Result<()> {
     let server = NotionAdmin {
-        inner: Inner::arc(client, AuditLog::new(audit_log_path)),
+        inner: Inner::arc(
+            client,
+            AuditLog::new_with_admin(audit_log_path, admin_log_path),
+        ),
     };
     let service = server.serve(stdio()).await?;
     service.waiting().await?;
