@@ -22,6 +22,7 @@ pub mod error;
 pub mod page;
 pub mod pagination;
 pub mod search;
+pub mod user;
 pub mod version;
 
 pub use client::{ClientConfig, NotionClient, MAX_RESPONSE_BYTES};

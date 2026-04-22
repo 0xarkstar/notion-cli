@@ -9,6 +9,7 @@ pub mod property;
 pub mod property_schema;
 pub mod rich_text;
 pub mod sort;
+pub mod user;
 
 pub use block::{
     Block, BlockBody, CalloutBlock, CodeBlock, EmptyBlock, HeadingBlock, TextBlock,
@@ -30,3 +31,4 @@ pub use property_schema::{
 };
 pub use rich_text::{Annotations, Link, RichText, RichTextContent, TextContent};
 pub use sort::{SortCriterion, SortDirection, TimestampKind};
+pub use user::{PersonFields, User, UserKind};

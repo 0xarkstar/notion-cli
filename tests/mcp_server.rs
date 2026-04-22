@@ -175,6 +175,33 @@ fn admin_tools_are_not_exposed_in_write_mode() {
     }
 }
 
+/// Invariant (D9, D10): `users *` and `comments *` are CLI-only in
+/// v0.3 — they MUST NOT appear in any MCP tier, not even admin.
+/// Trips if someone accidentally exposes user enumeration or
+/// comment abuse surface over MCP.
+#[test]
+fn users_and_comments_are_cli_only_never_in_mcp() {
+    for args in [&[] as &[&str], &["--allow-write"], &["--allow-admin"]] {
+        let out = run_mcp(args);
+        let tools = extract_tool_names(&out);
+        for forbidden in [
+            "users_list",
+            "users_get",
+            "list_users",
+            "get_user",
+            "comments_list",
+            "comments_create",
+            "list_comments",
+            "create_comment",
+        ] {
+            assert!(
+                !tools.contains(&forbidden.to_string()),
+                "tool `{forbidden}` exposed in mcp args {args:?} — must remain CLI-only in v0.3",
+            );
+        }
+    }
+}
+
 /// Sanity check that `--allow-admin` and `--allow-write` are mutually
 /// exclusive at the clap layer (they're marked `conflicts_with`). An
 /// operator who tries to pass both gets a CLI error — not silently

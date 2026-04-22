@@ -141,8 +141,8 @@
     },
     {
       "path": "tests/api_mock.rs",
-      "accessCount": 15,
-      "lastAccessed": 1776876672733,
+      "accessCount": 17,
+      "lastAccessed": 1776877669171,
       "type": "file"
     },
     {
@@ -176,21 +176,27 @@
       "type": "file"
     },
     {
+      "path": "tests/mcp_server.rs",
+      "accessCount": 7,
+      "lastAccessed": 1776877678432,
+      "type": "file"
+    },
+    {
+      "path": "tests/cli.rs",
+      "accessCount": 7,
+      "lastAccessed": 1776877687841,
+      "type": "file"
+    },
+    {
       "path": "tests/mcp_handlers.rs",
       "accessCount": 6,
       "lastAccessed": 1776866778479,
       "type": "file"
     },
     {
-      "path": "tests/mcp_server.rs",
+      "path": "src/types/mod.rs",
       "accessCount": 6,
-      "lastAccessed": 1776876655175,
-      "type": "file"
-    },
-    {
-      "path": "tests/cli.rs",
-      "accessCount": 6,
-      "lastAccessed": 1776876683888,
+      "lastAccessed": 1776877590122,
       "type": "file"
     },
     {
@@ -200,15 +206,15 @@
       "type": "file"
     },
     {
-      "path": "src/cli/mcp.rs",
-      "accessCount": 4,
-      "lastAccessed": 1776860517994,
+      "path": "src/cli/mod.rs",
+      "accessCount": 5,
+      "lastAccessed": 1776877627177,
       "type": "file"
     },
     {
-      "path": "src/types/mod.rs",
+      "path": "src/cli/mcp.rs",
       "accessCount": 4,
-      "lastAccessed": 1776861701577,
+      "lastAccessed": 1776860517994,
       "type": "file"
     },
     {
@@ -266,6 +272,12 @@
       "type": "file"
     },
     {
+      "path": "src/cli/user.rs",
+      "accessCount": 3,
+      "lastAccessed": 1776877646647,
+      "type": "file"
+    },
+    {
       "path": "src/types/common.rs",
       "accessCount": 2,
       "lastAccessed": 1776858920568,
@@ -275,12 +287,6 @@
       "path": "Cargo.toml",
       "accessCount": 2,
       "lastAccessed": 1776859055869,
-      "type": "file"
-    },
-    {
-      "path": "src/cli/mod.rs",
-      "accessCount": 2,
-      "lastAccessed": 1776861569039,
       "type": "file"
     },
     {
@@ -305,6 +311,12 @@
       "path": "src/cli/error.rs",
       "accessCount": 2,
       "lastAccessed": 1776861774871,
+      "type": "file"
+    },
+    {
+      "path": "src/api/mod.rs",
+      "accessCount": 2,
+      "lastAccessed": 1776877604448,
       "type": "file"
     },
     {
@@ -377,6 +389,24 @@
       "path": "src/types/icon.rs",
       "accessCount": 1,
       "lastAccessed": 1776861687438,
+      "type": "file"
+    },
+    {
+      "path": "src/api/pagination.rs",
+      "accessCount": 1,
+      "lastAccessed": 1776877568801,
+      "type": "file"
+    },
+    {
+      "path": "src/types/user.rs",
+      "accessCount": 1,
+      "lastAccessed": 1776877586930,
+      "type": "file"
+    },
+    {
+      "path": "src/api/user.rs",
+      "accessCount": 1,
+      "lastAccessed": 1776877602638,
       "type": "file"
     }
   ],

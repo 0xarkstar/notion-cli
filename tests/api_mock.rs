@@ -24,6 +24,8 @@ use notion_cli::api::database::{
     CreateDatabaseParent, CreateDatabaseRequest, InitialDataSource,
 };
 use notion_cli::api::page::{CreatePageRequest, MoveTarget, PageParent, UpdatePageRequest};
+use notion_cli::api::user::ListUsersOptions;
+use notion_cli::validation::UserId;
 use notion_cli::config::NotionToken;
 use notion_cli::types::icon::Icon;
 use notion_cli::types::property::PropertyValue;
@@ -938,6 +940,87 @@ async fn update_page_with_icon_none_tristate_skips_field() {
         .await
         .unwrap();
     assert_eq!(page.id.as_str(), PAGE_ID_HEX);
+}
+
+// === Users (CLI-only, D9) =================================================
+
+fn test_user_list_page(with_cursor: Option<&str>) -> serde_json::Value {
+    json!({
+        "object": "list",
+        "results": [
+            {"object":"user","id":"11111111111111111111111111111111","type":"person","person":{"email":"p@x"},"name":"Alice"},
+            {"object":"user","id":"22222222222222222222222222222222","type":"bot","bot":{},"name":"Integration"}
+        ],
+        "has_more": with_cursor.is_some(),
+        "next_cursor": with_cursor,
+    })
+}
+
+#[tokio::test]
+async fn list_users_paginates_cursor() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/users"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(test_user_list_page(None)),
+        )
+        .mount(&server)
+        .await;
+    let client = make_client(&server);
+    let resp = client
+        .list_users(&ListUsersOptions::default())
+        .await
+        .unwrap();
+    assert_eq!(resp.results.len(), 2);
+    assert!(resp.results[0].is_person());
+    assert!(resp.results[1].is_bot());
+    assert!(resp.is_exhausted());
+}
+
+#[tokio::test]
+async fn list_users_passes_page_size_query_param() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/users"))
+        .and(wiremock::matchers::query_param("page_size", "25"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(test_user_list_page(None)),
+        )
+        .mount(&server)
+        .await;
+    let client = make_client(&server);
+    let resp = client
+        .list_users(&ListUsersOptions {
+            page_size: Some(25),
+            start_cursor: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(resp.results.len(), 2);
+}
+
+#[tokio::test]
+async fn retrieve_user_returns_typed_bot() {
+    let user_hex = "33333333333333333333333333333333";
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path(format!("/v1/users/{user_hex}")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "object": "user",
+            "id": user_hex,
+            "type": "bot",
+            "bot": {"workspace_name": "Test"},
+            "name": "Bot"
+        })))
+        .mount(&server)
+        .await;
+    let client = make_client(&server);
+    let user = client
+        .retrieve_user(&UserId::parse(user_hex).unwrap())
+        .await
+        .unwrap();
+    assert!(user.is_bot());
+    assert_eq!(user.name.as_deref(), Some("Bot"));
 }
 
 // === Admin: page_move via dedicated endpoint (D12, v0.3) =================

@@ -26,6 +26,7 @@ pub mod mcp;
 pub mod page;
 pub mod schema;
 pub mod search;
+pub mod user;
 
 use clap::{Parser, Subcommand};
 
@@ -84,6 +85,9 @@ pub enum Command {
     Search(search::SearchArgs),
     /// Print JSON Schema for an internal type.
     Schema(schema::SchemaArgs),
+    /// User enumeration (CLI-only — not exposed over MCP in v0.3).
+    #[command(subcommand)]
+    Users(user::UsersCmd),
     /// Start an MCP stdio server for agent integration (Hermes, Claude).
     Mcp(mcp::McpArgs),
 }
@@ -118,6 +122,7 @@ pub async fn run(cli: Cli) -> Result<(), CliError> {
         Command::Block(cmd) => block::run(&cli, cmd).await,
         Command::Search(args) => search::run(&cli, args).await,
         Command::Schema(args) => schema::run(&cli, args),
+        Command::Users(cmd) => user::run(&cli, cmd).await,
         Command::Mcp(args) => mcp::run(&cli, args).await,
     }
 }

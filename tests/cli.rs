@@ -551,6 +551,80 @@ fn ds_update_add_option_emits_merge_delta() {
     assert_eq!(first_color, Some("red"));
 }
 
+// === users (v0.3 CLI-only, D9) ==========================================
+
+#[test]
+fn users_list_check_request_emits_get_users_path() {
+    let assert = cli()
+        .args(["--check-request", "--raw", "users", "list"])
+        .assert()
+        .success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let parsed: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    assert_eq!(parsed.get("method").and_then(|v| v.as_str()), Some("GET"));
+    assert_eq!(parsed.get("path").and_then(|v| v.as_str()), Some("/v1/users"));
+    assert_eq!(
+        parsed.get("client_filter").and_then(|v| v.as_str()),
+        Some("none")
+    );
+}
+
+#[test]
+fn users_list_bot_only_client_filter_emitted() {
+    let assert = cli()
+        .args([
+            "--check-request",
+            "--raw",
+            "users",
+            "list",
+            "--bot-only",
+        ])
+        .assert()
+        .success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let parsed: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    assert_eq!(
+        parsed.get("client_filter").and_then(|v| v.as_str()),
+        Some("bot_only")
+    );
+}
+
+#[test]
+fn users_list_bot_and_human_flags_are_mutually_exclusive() {
+    // Clap's conflicts_with on --human-only rejects both flags at parse.
+    let assert = cli()
+        .args([
+            "--check-request",
+            "users",
+            "list",
+            "--bot-only",
+            "--human-only",
+        ])
+        .assert()
+        .failure();
+}
+
+#[test]
+fn users_get_check_request_emits_user_id_path() {
+    let user_hex = "11111111111111111111111111111111";
+    let assert = cli()
+        .args([
+            "--check-request",
+            "--raw",
+            "users",
+            "get",
+            user_hex,
+        ])
+        .assert()
+        .success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let parsed: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    assert_eq!(
+        parsed.get("path").and_then(|v| v.as_str()),
+        Some(&*format!("/v1/users/{user_hex}"))
+    );
+}
+
 // === page move (D12 admin) ===============================================
 
 #[test]
