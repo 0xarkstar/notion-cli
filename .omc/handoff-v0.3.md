@@ -19,7 +19,7 @@
 | 1 | `db create --parent-page <id> --title --icon --schema <file>` | `POST /v1/databases` (with `initial_data_source`) | M | top | `--allow-admin` |
 | 2 | `ds update --add-property / --remove-property / --add-option / --rename` (single-delta per call) | `PATCH /v1/data_sources/{id}` | M-L | high | `--allow-admin` |
 | 3 | `ds add-relation --target --backlink \| --one-way \| --self` | convenience wrapper over #2 | S | high | `--allow-admin` |
-| 4 | `page move --to-page \| --to-data-source` | `PATCH /v1/pages/{id}` (EXTENDS UpdatePageRequest — D12) | **M** (revised from S) | med | `--allow-admin` |
+| 4 | `page move --to-page \| --to-data-source` | `POST /v1/pages/{id}/move` (dedicated endpoint, D12) | S | med | `--allow-admin` |
 | 5 | `users list [--bot-only \| --human-only]`, `users get <id>` | `GET /v1/users`, `GET /v1/users/{id}` | S | med | **CLI-only** (MCP deferred to v0.4) |
 | 6 | `comments list / create` | `GET/POST /v1/comments` | S | low | **CLI-only** (MCP deferred to v0.4) |
 | 7 | `page update --icon <emoji\|url> --cover <url>` (flags, NOT dedicated subcommand) | alias over existing `page update` | S | low | existing `page update` tier (`--allow-write`) |
@@ -98,11 +98,13 @@ Non-goals (explicit, unchanged): view management (API gap), `db delete` (use arc
 - Clearing: `--icon none` / `--cover none` → sends `null` in body.
 - One shared helper in `api/page.rs` routes the flags AND any future dedicated shortcut — divergence risk ≈ 0.
 
-### D12. `page move` (HANDOFF BUG FIX from v1)
-- The previous handoff claimed `update_page` already supported `parent` patch. **This was factually wrong.** `UpdatePageRequest` at `src/api/page.rs:46-53` has no `parent` field today.
-- Required work: extend `UpdatePageRequest` with `parent: Option<PageParent>`; add `MoveTarget { ToPage(PageId), ToDataSource(DataSourceId) }` enum; plumb through CLI + MCP admin tier; wiremock both branches.
-- **Size revised: S → M.**
-- **Pre-implementation smoke test (BLOCKER)**: verify Notion API 2026-03-11 actually accepts `parent` on `PATCH /v1/pages/{id}`. Post-data-source migration, parent semantics changed and docs are ambiguous. If API rejects → escalate: alternate approach (unarchive-at-new-parent?) or drop `page move` from v0.3. Budget 30 min before any code.
+### D12. `page move` via dedicated endpoint (smoke test PASSED 2026-04-22)
+- **Smoke test finding**: Notion introduced `POST /v1/pages/{page_id}/move` on 2026-01-15. `PATCH /v1/pages/{id}` explicitly rejects parent mutation ("A page's parent cannot be changed"). The dedicated move endpoint is the correct surface.
+- **Do NOT extend `UpdatePageRequest`** with `parent` — previous handoff's approach is obsolete. Add a new function `move_page(id, target)` to `src/api/page.rs` that POSTs to the move endpoint.
+- Body shape: `{"parent": {"type": "page_id" | "data_source_id", "...": "<id>"}}`. Target types supported: `page_id`, `data_source_id`. Use `data_source_id` not `database_id` (forward-compat with 2025-09-03+ data-source migration).
+- CLI: `page move <page_id> --to-page <id> | --to-data-source <id>` (mutually exclusive).
+- Restrictions to document in error hints: must be a regular page (not database), bot needs edit access on new parent, cross-workspace moves rejected.
+- **Size: S** (original estimate, after smoke-test clarified scope — no UpdatePageRequest extension needed).
 
 ### D13. MCP tool-list snapshot regression test
 - `tests/mcp_server_snapshot.rs` — start server in each tier, assert `tools/list` returns exactly the expected tool names/order:
@@ -150,7 +152,7 @@ Target: +70-90 tests on v0.2's 198 → ~270-290 total. Maintain 80%+ line covera
 
 ## Open questions for implementer
 
-1. **D12 smoke test (BLOCKER)**: does Notion API 2026-03-11 accept `parent` on `PATCH /v1/pages/{id}`? Confirm before coding #4.
+1. ~~D12 smoke test~~ — DONE 2026-04-22. Finding: dedicated `POST /v1/pages/{page_id}/move` endpoint (2026-01-15 release). See D12 for corrected design.
 2. Separate binary `notion-cli-admin`? Would simplify ClawHub scanner story (no admin vocabulary in the public CLI SKILL). **Defer post-v0.3** — revisit only if ClawHub iteration proves painful.
 3. `--reconcile` mode for `ds update` (whole-schema JSON reconciliation): **defer to v0.4+**.
 4. `ds update --bulk` partial-failure exit code: `3` with structured report (this plan's default), or `2` + separate `--continue-on-error` flag? Pick at implementation time, document in CHANGELOG.
@@ -176,7 +178,8 @@ Architect + critic ran in parallel. Key findings folded into D1-D13 above. Origi
 - `src/types/database.rs` — same (D4)
 - `src/api/data_source.rs` — extend with `update_data_source(id, req)` + single-delta shape + `--bulk` (D2)
 - `src/api/database.rs` — add `create_database(req)` with typed `PropertySchema` (D4, D8)
-- `src/api/page.rs:46-53` — **EXTEND `UpdatePageRequest`** with `parent: Option<PageParent>`, `icon: Option<Icon>`, `cover: Option<Cover>` (D11, D12). Previously WRONG claim: "already supported."
+- `src/api/page.rs:46-53` — **EXTEND `UpdatePageRequest`** with `icon: Option<Icon>`, `cover: Option<Cover>` (D11 only). Do NOT add `parent` — the move endpoint is separate.
+- `src/api/page.rs` — **NEW function** `move_page(id, MoveTarget)` posting to `/v1/pages/{id}/move` (D12). New types: `MoveTarget { ToPage(PageId), ToDataSource(DataSourceId) }` + `ParentForMove` serde-tagged enum for the body.
 - `src/api/user.rs` — **NEW** (D9, CLI-only plumbing)
 - `src/api/comment.rs` — **NEW** (D10, CLI-only plumbing)
 - `src/api/error.rs:54-106` — extend validation-hint registry (relation-target-not-shared, wiki-parent-for-relation, synced_property_name collision, parent-page-not-found for `db create`)
@@ -190,7 +193,7 @@ Architect + critic ran in parallel. Key findings folded into D1-D13 above. Origi
 
 ## Implementation order (strict)
 
-1. **D12 smoke test (BLOCKER, ~30 min)** — verify `PATCH /v1/pages/{id}` accepts `parent` on current API. Gate on pass before proceeding.
+1. ~~D12 smoke test~~ — DONE. Dedicated `POST /v1/pages/{page_id}/move` exists; `UpdatePageRequest` unchanged for move (see D12).
 2. **Type foundation (D4)** — `PropertySchema` enum + `Schema { Known | Raw }` wrapper + proptest roundtrip. Migrate `DataSource.properties` / `Database.properties`. Verify v0.2 read shape still deserialises via `Raw` fallback.
 3. **MCP three-file split (D5)** — refactor BEFORE adding any new tool. D13 snapshot test as safety net confirming v0.2 surface unchanged.
 4. **`db create` (#1)** — exercises PropertySchema write path first.
