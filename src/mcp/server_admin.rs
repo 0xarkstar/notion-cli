@@ -46,8 +46,8 @@ use crate::mcp::handlers;
 use crate::mcp::params::{
     AppendBlockChildrenParams, CreateDataSourceParams, CreatePageParams, DbCreateParams,
     DeleteBlockParams, DsAddRelationParams, DsUpdateParams, GetBlockParams,
-    GetDataSourceParams, GetPageParams, ListBlockChildrenParams, QueryDataSourceParams,
-    SearchParams, UpdateBlockParams, UpdatePageParams,
+    GetDataSourceParams, GetPageParams, ListBlockChildrenParams, PageMoveParams,
+    QueryDataSourceParams, SearchParams, UpdateBlockParams, UpdatePageParams,
 };
 
 #[derive(Clone)]
@@ -297,6 +297,24 @@ impl NotionAdmin {
         let result = handlers::ds_add_relation(&self.inner.client, params.0).await;
         self.inner.audit.record(
             "ds_add_relation",
+            Some(&target),
+            result.as_ref().map(|_| ()).map_err(|e| e.message.as_ref()),
+        );
+        Ok(to_result(&result?))
+    }
+
+    #[tool(
+        name = "page_move",
+        description = "Relocate a page to a new parent. Uses POST /v1/pages/{id}/move — the dedicated endpoint introduced 2026-01-15. PATCH does not accept parent mutation. Exactly one of target_page_id or target_data_source_id required. Restrictions: source must be a regular page (not database), integration needs edit access to new parent, cross-workspace rejected. Admin operation — audited."
+    )]
+    async fn page_move(
+        &self,
+        params: Parameters<PageMoveParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let target = params.0.page_id.clone();
+        let result = handlers::page_move(&self.inner.client, params.0).await;
+        self.inner.audit.record(
+            "page_move",
             Some(&target),
             result.as_ref().map(|_| ()).map_err(|e| e.message.as_ref()),
         );

@@ -130,8 +130,9 @@ fn create_data_source_tool_is_exposed_in_write_mode() {
 /// this assertion when its tool lands. Do NOT loosen the equality
 /// — it guards against cross-tier drift per D5/D13.
 ///
-/// Current admin tools landed: `db_create` (task 18), `ds_update`
-/// (task 19), `ds_add_relation` (task 20). Pending: `page_move`.
+/// Current admin tools landed: `db_create` (#1), `ds_update` (#2),
+/// `ds_add_relation` (#3), `page_move` (#4). All v0.3 admin commands
+/// now live in admin tier.
 #[test]
 fn allow_admin_mode_exposes_expected_tool_set() {
     let out = run_mcp(&["--allow-admin"]);
@@ -150,6 +151,7 @@ fn allow_admin_mode_exposes_expected_tool_set() {
             "get_data_source".to_string(),
             "get_page".to_string(),
             "list_block_children".to_string(),
+            "page_move".to_string(),
             "query_data_source".to_string(),
             "search".to_string(),
             "update_block".to_string(),
@@ -165,7 +167,7 @@ fn allow_admin_mode_exposes_expected_tool_set() {
 fn admin_tools_are_not_exposed_in_write_mode() {
     let out = run_mcp(&["--allow-write"]);
     let tools = extract_tool_names(&out);
-    for admin_tool in ["db_create", "ds_update", "ds_add_relation"] {
+    for admin_tool in ["db_create", "ds_update", "ds_add_relation", "page_move"] {
         assert!(
             !tools.contains(&admin_tool.to_string()),
             "admin tool `{admin_tool}` leaked into --allow-write mode:\n{tools:?}",

@@ -551,6 +551,100 @@ fn ds_update_add_option_emits_merge_delta() {
     assert_eq!(first_color, Some("red"));
 }
 
+// === page move (D12 admin) ===============================================
+
+#[test]
+fn page_move_to_page_uses_move_endpoint_and_page_id_parent() {
+    let target = "22222222222222222222222222222222";
+    let assert = cli()
+        .args([
+            "--check-request",
+            "--raw",
+            "page",
+            "move",
+            VALID_ID,
+            "--to-page",
+            target,
+        ])
+        .assert()
+        .success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let parsed: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    assert_eq!(parsed.get("method").and_then(|v| v.as_str()), Some("POST"));
+    let path = parsed.get("path").and_then(|v| v.as_str()).unwrap_or("");
+    assert!(
+        path.ends_with("/move"),
+        "page move must use the dedicated /move endpoint, got {path}",
+    );
+    assert_eq!(
+        parsed
+            .pointer("/body/parent/type")
+            .and_then(|v| v.as_str()),
+        Some("page_id"),
+    );
+    assert_eq!(
+        parsed
+            .pointer("/body/parent/page_id")
+            .and_then(|v| v.as_str()),
+        Some(target),
+    );
+}
+
+#[test]
+fn page_move_to_data_source_emits_data_source_id_parent() {
+    let target_ds = "33333333333333333333333333333333";
+    let assert = cli()
+        .args([
+            "--check-request",
+            "--raw",
+            "page",
+            "move",
+            VALID_ID,
+            "--to-data-source",
+            target_ds,
+        ])
+        .assert()
+        .success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let parsed: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    assert_eq!(
+        parsed
+            .pointer("/body/parent/type")
+            .and_then(|v| v.as_str()),
+        Some("data_source_id"),
+        "must emit data_source_id (not database_id) — forward-compat",
+    );
+}
+
+#[test]
+fn page_move_without_any_target_flag_exits_64() {
+    let assert = cli()
+        .args(["--check-request", "page", "move", VALID_ID])
+        .assert()
+        .failure();
+    assert_eq!(assert.get_output().status.code(), Some(64));
+}
+
+#[test]
+fn page_move_with_both_target_flags_exits_64() {
+    let target_a = "22222222222222222222222222222222";
+    let target_b = "33333333333333333333333333333333";
+    let assert = cli()
+        .args([
+            "--check-request",
+            "page",
+            "move",
+            VALID_ID,
+            "--to-page",
+            target_a,
+            "--to-data-source",
+            target_b,
+        ])
+        .assert()
+        .failure();
+    assert_eq!(assert.get_output().status.code(), Some(64));
+}
+
 // === page update --icon / --cover tristate (D11) =========================
 
 #[test]

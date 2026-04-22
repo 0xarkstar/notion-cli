@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use clap::Subcommand;
 
-use crate::api::page::{CreatePageRequest, PageParent, UpdatePageRequest};
+use crate::api::page::{CreatePageRequest, MoveTarget, PageParent, UpdatePageRequest};
 use crate::cli::{build_client, Cli, CliError};
 use crate::output::emit;
 use crate::types::icon::{Cover, Icon};
@@ -65,6 +65,26 @@ pub enum PageCmd {
     Archive {
         /// Page ID or URL.
         id: String,
+    },
+    /// Relocate a page to a new parent (D12). Uses the dedicated
+    /// `POST /v1/pages/{id}/move` endpoint — `PATCH /v1/pages/{id}`
+    /// does NOT accept parent mutation.
+    ///
+    /// Exactly one of `--to-page` or `--to-data-source` required.
+    /// Restrictions: source must be a regular page (not a database),
+    /// integration needs edit access to the new parent, cross-
+    /// workspace moves are rejected.
+    Move {
+        /// Page ID or URL to move.
+        id: String,
+        /// Move under this parent page (mutually exclusive with
+        /// `--to-data-source`).
+        #[arg(long)]
+        to_page: Option<String>,
+        /// Move into this data source (mutually exclusive with
+        /// `--to-page`).
+        #[arg(long)]
+        to_data_source: Option<String>,
     },
 }
 
@@ -181,6 +201,52 @@ pub async fn run(cli: &Cli, cmd: &PageCmd) -> Result<(), CliError> {
             }
             let client = build_client(cli)?;
             let page = client.update_page(&page_id, &req).await?;
+            emit(&cli.output_options(), &page)?;
+            Ok(())
+        }
+        PageCmd::Move {
+            id,
+            to_page,
+            to_data_source,
+        } => {
+            let page_id = PageId::from_url_or_id(id)
+                .map_err(|e| CliError::Validation(format!("page id: {e}")))?;
+            let target = match (to_page.as_deref(), to_data_source.as_deref()) {
+                (Some(p), None) => MoveTarget::ToPage(
+                    PageId::from_url_or_id(p)
+                        .map_err(|e| CliError::Validation(format!("--to-page: {e}")))?,
+                ),
+                (None, Some(ds)) => MoveTarget::ToDataSource(
+                    DataSourceId::from_url_or_id(ds)
+                        .map_err(|e| CliError::Validation(format!("--to-data-source: {e}")))?,
+                ),
+                _ => {
+                    return Err(CliError::Usage(
+                        "exactly one of --to-page or --to-data-source required".into(),
+                    ));
+                }
+            };
+            if cli.check_request {
+                let parent_json = match &target {
+                    MoveTarget::ToPage(p) => serde_json::json!({
+                        "type": "page_id", "page_id": p
+                    }),
+                    MoveTarget::ToDataSource(ds) => serde_json::json!({
+                        "type": "data_source_id", "data_source_id": ds
+                    }),
+                };
+                emit(
+                    &cli.output_options(),
+                    &serde_json::json!({
+                        "method": "POST",
+                        "path": format!("/v1/pages/{page_id}/move"),
+                        "body": { "parent": parent_json },
+                    }),
+                )?;
+                return Ok(());
+            }
+            let client = build_client(cli)?;
+            let page = client.move_page(&page_id, target).await?;
             emit(&cli.output_options(), &page)?;
             Ok(())
         }

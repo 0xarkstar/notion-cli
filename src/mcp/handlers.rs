@@ -13,14 +13,14 @@ use crate::api::data_source::{
 use crate::api::database::{
     CreateDatabaseParent, CreateDatabaseRequest, InitialDataSource,
 };
-use crate::api::page::{CreatePageRequest, PageParent, UpdatePageRequest};
+use crate::api::page::{CreatePageRequest, MoveTarget, PageParent, UpdatePageRequest};
 use crate::api::search::SearchRequest;
 use crate::api::{ApiError, NotionClient};
 use crate::mcp::params::{
     AppendBlockChildrenParams, CreateDataSourceParams, CreatePageParams, DbCreateParams,
     DeleteBlockParams, DsAddRelationParams, DsUpdateParams, GetBlockParams,
-    GetDataSourceParams, GetPageParams, ListBlockChildrenParams, QueryDataSourceParams,
-    SearchParams, UpdateBlockParams, UpdatePageParams,
+    GetDataSourceParams, GetPageParams, ListBlockChildrenParams, PageMoveParams,
+    QueryDataSourceParams, SearchParams, UpdateBlockParams, UpdatePageParams,
 };
 use crate::output::wrap_untrusted;
 use crate::types::block::BlockBody;
@@ -342,6 +342,40 @@ fn parse_cover_flag_mcp(value: Option<&str>) -> Result<Option<Option<Cover>>, Er
             )));
         }
     })
+}
+
+pub async fn page_move(
+    client: &NotionClient,
+    p: PageMoveParams,
+) -> Result<serde_json::Value, ErrorData> {
+    let id = validate(PageId::from_url_or_id(&p.page_id), "page_id")?;
+    let target = match (p.target_page_id.as_deref(), p.target_data_source_id.as_deref()) {
+        (Some(pid), None) => MoveTarget::ToPage(validate(
+            PageId::from_url_or_id(pid),
+            "target_page_id",
+        )?),
+        (None, Some(ds)) => MoveTarget::ToDataSource(validate(
+            DataSourceId::from_url_or_id(ds),
+            "target_data_source_id",
+        )?),
+        (None, None) => {
+            return Err(invalid(
+                "exactly one of target_page_id or target_data_source_id required",
+            ));
+        }
+        (Some(_), Some(_)) => {
+            return Err(invalid(
+                "target_page_id and target_data_source_id are mutually exclusive",
+            ));
+        }
+    };
+    let page = client
+        .move_page(&id, target)
+        .await
+        .map_err(|e| api_to_rpc(&e))?;
+    Ok(wrap_untrusted(&serde_json::to_value(page).map_err(|e| {
+        ErrorData::internal_error(format!("serialize: {e}"), None)
+    })?))
 }
 
 pub async fn ds_add_relation(

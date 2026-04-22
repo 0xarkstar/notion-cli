@@ -135,6 +135,20 @@ pub struct CreateDataSourceParams {
 // === Admin tier params ====================================================
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct PageMoveParams {
+    /// Page ID (32-hex, dashed, or URL) to move.
+    pub page_id: String,
+    /// New parent page. Mutually exclusive with
+    /// `target_data_source_id`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_page_id: Option<String>,
+    /// New parent data source. Mutually exclusive with
+    /// `target_page_id`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_data_source_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct DsUpdateParams {
     /// Data source ID or URL.
     pub data_source_id: String,

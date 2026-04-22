@@ -66,6 +66,51 @@ pub struct UpdatePageRequest {
     pub cover: Option<Option<Cover>>,
 }
 
+/// Where a `page move` call should send the page.
+///
+/// `PATCH /v1/pages/{id}` explicitly rejects parent mutation — per
+/// Notion's docs: "A page's parent cannot be changed" on PATCH.
+/// Use the dedicated `POST /v1/pages/{page_id}/move` endpoint
+/// introduced 2026-01-15 (D12 smoke test confirmed).
+///
+/// Target types supported by Notion:
+/// - `ToPage(PageId)` — move under a regular page
+/// - `ToDataSource(DataSourceId)` — move into a database's data source
+///
+/// Notion accepts `data_source_id` (not `database_id`) on API
+/// 2025-09-03+. Self-moves (same parent) are server-rejected.
+#[derive(Debug, Clone)]
+pub enum MoveTarget {
+    ToPage(PageId),
+    ToDataSource(DataSourceId),
+}
+
+/// The `parent` block on the move-page request body. Mirrors
+/// [`PageParent`] but with the 2026-01-15 move-specific variants.
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ParentForMove {
+    #[serde(rename = "page_id")]
+    Page { page_id: PageId },
+    #[serde(rename = "data_source_id")]
+    DataSource { data_source_id: DataSourceId },
+}
+
+impl From<MoveTarget> for ParentForMove {
+    fn from(t: MoveTarget) -> Self {
+        match t {
+            MoveTarget::ToPage(id) => Self::Page { page_id: id },
+            MoveTarget::ToDataSource(id) => Self::DataSource { data_source_id: id },
+        }
+    }
+}
+
+/// Request body for `POST /v1/pages/{page_id}/move`.
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+pub struct MovePageRequest {
+    pub parent: ParentForMove,
+}
+
 impl NotionClient {
     /// `GET /v1/pages/{id}`.
     pub async fn retrieve_page(&self, id: &PageId) -> Result<Page, ApiError> {
@@ -84,5 +129,20 @@ impl NotionClient {
         req: &UpdatePageRequest,
     ) -> Result<Page, ApiError> {
         self.patch(&format!("/pages/{id}"), req).await
+    }
+
+    /// `POST /v1/pages/{id}/move` — relocate a page to a new parent.
+    ///
+    /// Notion restrictions to surface in error hints:
+    /// - Must be a regular page (not a database).
+    /// - The integration must have edit access to the new parent.
+    /// - Cross-workspace moves are rejected.
+    pub async fn move_page(
+        &self,
+        id: &PageId,
+        target: MoveTarget,
+    ) -> Result<Page, ApiError> {
+        let req = MovePageRequest { parent: ParentForMove::from(target) };
+        self.post(&format!("/pages/{id}/move"), &req).await
     }
 }

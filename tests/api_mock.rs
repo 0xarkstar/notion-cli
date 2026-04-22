@@ -23,7 +23,7 @@ use notion_cli::api::data_source::{
 use notion_cli::api::database::{
     CreateDatabaseParent, CreateDatabaseRequest, InitialDataSource,
 };
-use notion_cli::api::page::{CreatePageRequest, PageParent, UpdatePageRequest};
+use notion_cli::api::page::{CreatePageRequest, MoveTarget, PageParent, UpdatePageRequest};
 use notion_cli::config::NotionToken;
 use notion_cli::types::icon::Icon;
 use notion_cli::types::property::PropertyValue;
@@ -934,6 +934,55 @@ async fn update_page_with_icon_none_tristate_skips_field() {
                 icon: None, // tristate: leave unchanged, skip field
                 cover: None,
             },
+        )
+        .await
+        .unwrap();
+    assert_eq!(page.id.as_str(), PAGE_ID_HEX);
+}
+
+// === Admin: page_move via dedicated endpoint (D12, v0.3) =================
+
+#[tokio::test]
+async fn move_page_to_page_posts_to_move_endpoint() {
+    let server = MockServer::start().await;
+    let target_hex = "22222222222222222222222222222222";
+    Mock::given(method("POST"))
+        .and(path(format!("/v1/pages/{PAGE_ID_HEX}/move")))
+        .and(header("Notion-Version", NOTION_API_VERSION))
+        .and(body_json(json!({
+            "parent": {"type": "page_id", "page_id": target_hex}
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(test_page_json(PAGE_ID_HEX)))
+        .mount(&server)
+        .await;
+    let client = make_client(&server);
+    let page = client
+        .move_page(
+            &PageId::parse(PAGE_ID_HEX).unwrap(),
+            MoveTarget::ToPage(PageId::parse(target_hex).unwrap()),
+        )
+        .await
+        .unwrap();
+    assert_eq!(page.id.as_str(), PAGE_ID_HEX);
+}
+
+#[tokio::test]
+async fn move_page_to_data_source_sends_data_source_id() {
+    let server = MockServer::start().await;
+    let target_ds_hex = "33333333333333333333333333333333";
+    Mock::given(method("POST"))
+        .and(path(format!("/v1/pages/{PAGE_ID_HEX}/move")))
+        .and(body_json(json!({
+            "parent": {"type": "data_source_id", "data_source_id": target_ds_hex}
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(test_page_json(PAGE_ID_HEX)))
+        .mount(&server)
+        .await;
+    let client = make_client(&server);
+    let page = client
+        .move_page(
+            &PageId::parse(PAGE_ID_HEX).unwrap(),
+            MoveTarget::ToDataSource(DataSourceId::parse(target_ds_hex).unwrap()),
         )
         .await
         .unwrap();
