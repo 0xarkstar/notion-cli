@@ -163,6 +163,30 @@ pub struct DsUpdateParams {
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct DsAddRelationParams {
+    /// Source data source ID or URL — the DS gaining a relation property.
+    pub source_data_source_id: String,
+    /// Name for the new relation property on the source.
+    pub name: String,
+    /// Target data source ID. Required unless `self` is true.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_data_source_id: Option<String>,
+    /// Two-way relation: Notion creates a reciprocal property on the
+    /// target data source with this name. Mutually exclusive with
+    /// `one_way` and `self`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backlink: Option<String>,
+    /// One-way relation (single_property). Mutually exclusive with
+    /// `backlink` and `self`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub one_way: Option<bool>,
+    /// Self-referential relation (same source and target DS).
+    /// Skips pre-flight GET on the target.
+    #[serde(default, rename = "self", skip_serializing_if = "Option::is_none")]
+    pub self_ref: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct DbCreateParams {
     /// Parent page ID (32-hex or dashed, or a page URL). Must be a
     /// regular page — databases cannot parent other databases.

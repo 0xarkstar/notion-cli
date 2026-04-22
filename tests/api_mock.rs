@@ -440,6 +440,62 @@ async fn ds_update_add_option_appends_one_option_for_merge() {
 }
 
 #[tokio::test]
+async fn ds_add_relation_dual_property_body_shape() {
+    // UpdateDataSourceRequest::add_relation_property emits the
+    // dual_property wire shape — the #1 BlueNode-bootstrap error
+    // hot-spot per the Obsidian capture.
+    let target_hex = "1111222233334444aaaabbbbccccdddd";
+    let req = UpdateDataSourceRequest::add_relation_property(
+        "Owner",
+        DataSourceId::parse(target_hex).unwrap(),
+        RelationDirection::Dual("Backlink".into()),
+    );
+    let body = serde_json::to_value(&req).unwrap();
+    assert_eq!(
+        body.pointer("/properties/Owner/type").and_then(|v| v.as_str()),
+        Some("relation"),
+    );
+    assert_eq!(
+        body.pointer("/properties/Owner/relation/data_source_id")
+            .and_then(|v| v.as_str()),
+        Some(target_hex),
+        "must emit data_source_id (not database_id) — forward-compat trap",
+    );
+    assert_eq!(
+        body.pointer("/properties/Owner/relation/type").and_then(|v| v.as_str()),
+        Some("dual_property"),
+    );
+    assert_eq!(
+        body.pointer("/properties/Owner/relation/dual_property/synced_property_name")
+            .and_then(|v| v.as_str()),
+        Some("Backlink"),
+    );
+}
+
+#[tokio::test]
+async fn ds_add_relation_one_way_body_shape() {
+    let target_hex = "1111222233334444aaaabbbbccccdddd";
+    let req = UpdateDataSourceRequest::add_relation_property(
+        "Owner",
+        DataSourceId::parse(target_hex).unwrap(),
+        RelationDirection::OneWay,
+    );
+    let body = serde_json::to_value(&req).unwrap();
+    assert_eq!(
+        body.pointer("/properties/Owner/relation/type").and_then(|v| v.as_str()),
+        Some("single_property"),
+    );
+    // single_property body is `{}` (empty object).
+    let single = body.pointer("/properties/Owner/relation/single_property");
+    assert!(
+        matches!(single, Some(v) if v.is_object()),
+        "single_property body must be `{{}}` (empty object), got {single:?}",
+    );
+}
+
+use notion_cli::api::data_source::RelationDirection;
+
+#[tokio::test]
 async fn ds_update_bulk_passes_raw_body_through() {
     let server = MockServer::start().await;
     let body = json!({

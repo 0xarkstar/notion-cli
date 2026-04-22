@@ -48,6 +48,19 @@ pub struct CreateDataSourceRequest {
     pub properties: serde_json::Value,
 }
 
+/// Direction of a relation property created via `ds add-relation`.
+///
+/// - `OneWay` — Notion `single_property` relation; no backlink
+///   property is created on the target data source.
+/// - `Dual(synced_name)` — Notion `dual_property` relation; Notion
+///   auto-creates a reciprocal property on the target with the
+///   given name (D7).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RelationDirection {
+    OneWay,
+    Dual(String),
+}
+
 /// Kinds of property that support an option list and hence
 /// `ds update add-option`. Notion merges options by name on PATCH —
 /// existing options are preserved.
@@ -148,6 +161,37 @@ impl UpdateDataSourceRequest {
             "type": key,
             key: { "options": [option] }
         });
+        props.insert(prop_name.to_string(), body);
+        Self { properties: props, ..Default::default() }
+    }
+
+    /// Single-delta convenience: add a relation property. Uses
+    /// `data_source_id` (not `database_id`) per the API 2025-09-03+
+    /// migration. Direction is either one-way (single_property) or
+    /// two-way (dual_property with a backlink name).
+    #[must_use]
+    pub fn add_relation_property(
+        prop_name: &str,
+        target: DataSourceId,
+        direction: RelationDirection,
+    ) -> Self {
+        let inner = match direction {
+            RelationDirection::OneWay => serde_json::json!({
+                "data_source_id": target,
+                "type": "single_property",
+                "single_property": {}
+            }),
+            RelationDirection::Dual(backlink) => serde_json::json!({
+                "data_source_id": target,
+                "type": "dual_property",
+                "dual_property": {"synced_property_name": backlink}
+            }),
+        };
+        let body = serde_json::json!({
+            "type": "relation",
+            "relation": inner
+        });
+        let mut props = serde_json::Map::new();
         props.insert(prop_name.to_string(), body);
         Self { properties: props, ..Default::default() }
     }

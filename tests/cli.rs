@@ -352,6 +352,174 @@ fn ds_update_rename_property_sends_name_directive() {
     assert_eq!(new_name, Some("New"));
 }
 
+// === ds add-relation (v0.3 admin) ========================================
+
+#[test]
+fn ds_add_relation_without_any_direction_flag_exits_64() {
+    let target_hex = "1111222233334444aaaabbbbccccdddd";
+    let assert = cli()
+        .args([
+            "--check-request",
+            "ds",
+            "add-relation",
+            VALID_ID,
+            "--name",
+            "Owner",
+            "--target",
+            target_hex,
+        ])
+        .assert()
+        .failure();
+    assert_eq!(assert.get_output().status.code(), Some(64));
+    let err = String::from_utf8_lossy(&assert.get_output().stderr);
+    assert!(
+        err.to_lowercase().contains("exactly one"),
+        "expected 'exactly one' direction hint: {err}",
+    );
+}
+
+#[test]
+fn ds_add_relation_with_both_backlink_and_one_way_exits_64() {
+    let target_hex = "1111222233334444aaaabbbbccccdddd";
+    let assert = cli()
+        .args([
+            "--check-request",
+            "ds",
+            "add-relation",
+            VALID_ID,
+            "--name",
+            "Owner",
+            "--target",
+            target_hex,
+            "--backlink",
+            "Back",
+            "--one-way",
+        ])
+        .assert()
+        .failure();
+    assert_eq!(assert.get_output().status.code(), Some(64));
+}
+
+#[test]
+fn ds_add_relation_backlink_emits_dual_property_shape() {
+    let target_hex = "1111222233334444aaaabbbbccccdddd";
+    let assert = cli()
+        .args([
+            "--check-request",
+            "--raw",
+            "ds",
+            "add-relation",
+            VALID_ID,
+            "--name",
+            "Owner",
+            "--target",
+            target_hex,
+            "--backlink",
+            "OwnedBy",
+        ])
+        .assert()
+        .success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let parsed: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    assert_eq!(
+        parsed
+            .pointer("/body/properties/Owner/relation/type")
+            .and_then(|v| v.as_str()),
+        Some("dual_property"),
+    );
+    assert_eq!(
+        parsed
+            .pointer("/body/properties/Owner/relation/data_source_id")
+            .and_then(|v| v.as_str()),
+        Some(target_hex),
+    );
+    assert_eq!(
+        parsed
+            .pointer(
+                "/body/properties/Owner/relation/dual_property/synced_property_name",
+            )
+            .and_then(|v| v.as_str()),
+        Some("OwnedBy"),
+    );
+}
+
+#[test]
+fn ds_add_relation_one_way_emits_single_property_shape() {
+    let target_hex = "1111222233334444aaaabbbbccccdddd";
+    let assert = cli()
+        .args([
+            "--check-request",
+            "--raw",
+            "ds",
+            "add-relation",
+            VALID_ID,
+            "--name",
+            "Owner",
+            "--target",
+            target_hex,
+            "--one-way",
+        ])
+        .assert()
+        .success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let parsed: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    assert_eq!(
+        parsed
+            .pointer("/body/properties/Owner/relation/type")
+            .and_then(|v| v.as_str()),
+        Some("single_property"),
+    );
+}
+
+#[test]
+fn ds_add_relation_self_skips_target_and_sets_preflight_marker() {
+    let assert = cli()
+        .args([
+            "--check-request",
+            "--raw",
+            "ds",
+            "add-relation",
+            VALID_ID,
+            "--name",
+            "ParentOf",
+            "--self",
+        ])
+        .assert()
+        .success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let parsed: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    // Target data_source_id in body == source (self).
+    let target = parsed
+        .pointer("/body/properties/ParentOf/relation/data_source_id")
+        .and_then(|v| v.as_str());
+    assert_eq!(target, Some(VALID_ID));
+    // Preflight skipped flag visible in check-request output.
+    let skipped = parsed
+        .pointer("/preflight/skipped_when_self")
+        .and_then(|v| v.as_bool());
+    assert_eq!(skipped, Some(true));
+}
+
+#[test]
+fn ds_add_relation_self_with_different_target_exits_64() {
+    let target_hex = "1111222233334444aaaabbbbccccdddd";
+    let assert = cli()
+        .args([
+            "--check-request",
+            "ds",
+            "add-relation",
+            VALID_ID,
+            "--name",
+            "X",
+            "--target",
+            target_hex,
+            "--self",
+        ])
+        .assert()
+        .failure();
+    assert_eq!(assert.get_output().status.code(), Some(64));
+}
+
 #[test]
 fn ds_update_add_option_emits_merge_delta() {
     let assert = cli()

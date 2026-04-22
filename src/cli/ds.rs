@@ -9,8 +9,8 @@ use std::path::PathBuf;
 use clap::{Subcommand, ValueEnum};
 
 use crate::api::data_source::{
-    CreateDataSourceParent, CreateDataSourceRequest, QueryDataSourceRequest, SelectKind,
-    UpdateDataSourceRequest,
+    CreateDataSourceParent, CreateDataSourceRequest, QueryDataSourceRequest,
+    RelationDirection, SelectKind, UpdateDataSourceRequest,
 };
 use crate::cli::{build_client, Cli, CliError};
 use crate::output::emit;
@@ -62,6 +62,34 @@ pub enum DsCmd {
     /// `--yes` in non-TTY contexts (D1).
     #[command(subcommand)]
     Update(UpdateCmd),
+    /// Add a relation property — convenience wrapper over `ds update`.
+    ///
+    /// Exactly one direction flag required: `--backlink <name>` for
+    /// two-way (dual_property), `--one-way` for single_property, or
+    /// `--self` for self-referential. Pre-flight: GET on the target
+    /// DS to verify it exists and is shared with the integration
+    /// (skipped when `--self`).
+    AddRelation {
+        /// Source data source ID or URL.
+        id: String,
+        /// Name of the new relation property on the source.
+        #[arg(long)]
+        name: String,
+        /// Target data source ID or URL. Required unless `--self`.
+        #[arg(long)]
+        target: Option<String>,
+        /// Two-way relation: Notion creates a reciprocal property on
+        /// the target with this name. Mutually exclusive with
+        /// `--one-way` and `--self`.
+        #[arg(long)]
+        backlink: Option<String>,
+        /// One-way relation: no backlink is created on the target.
+        #[arg(long)]
+        one_way: bool,
+        /// Self-referential relation (source == target).
+        #[arg(long = "self")]
+        self_: bool,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -246,7 +274,97 @@ pub async fn run(cli: &Cli, cmd: &DsCmd) -> Result<(), CliError> {
             Ok(())
         }
         DsCmd::Update(sub) => run_update(cli, sub).await,
+        DsCmd::AddRelation {
+            id,
+            name,
+            target,
+            backlink,
+            one_way,
+            self_,
+        } => {
+            run_add_relation(cli, id, name, target.as_deref(), backlink.as_deref(), *one_way, *self_)
+                .await
+        }
     }
+}
+
+async fn run_add_relation(
+    cli: &Cli,
+    src_id: &str,
+    name: &str,
+    target: Option<&str>,
+    backlink: Option<&str>,
+    one_way: bool,
+    self_: bool,
+) -> Result<(), CliError> {
+    let direction_count =
+        usize::from(backlink.is_some()) + usize::from(one_way) + usize::from(self_);
+    if direction_count != 1 {
+        return Err(CliError::Usage(
+            "exactly one of --backlink <name>, --one-way, or --self required".into(),
+        ));
+    }
+
+    let src_ds = parse_ds_id(src_id)?;
+    let target_ds = if self_ {
+        if let Some(t) = target {
+            let parsed = DataSourceId::from_url_or_id(t)
+                .map_err(|e| CliError::Validation(format!("--target: {e}")))?;
+            if parsed.as_str() != src_ds.as_str() {
+                return Err(CliError::Usage(
+                    "--self with --target set to a different id — drop --target or --self".into(),
+                ));
+            }
+            parsed
+        } else {
+            src_ds.clone()
+        }
+    } else {
+        let t = target.ok_or_else(|| {
+            CliError::Usage("--target <ds_id> required (unless --self)".into())
+        })?;
+        DataSourceId::from_url_or_id(t)
+            .map_err(|e| CliError::Validation(format!("--target: {e}")))?
+    };
+
+    let direction = if let Some(b) = backlink {
+        RelationDirection::Dual(b.to_string())
+    } else {
+        // one_way or self without backlink.
+        RelationDirection::OneWay
+    };
+
+    let req = UpdateDataSourceRequest::add_relation_property(name, target_ds.clone(), direction);
+
+    if cli.check_request {
+        emit(
+            &cli.output_options(),
+            &serde_json::json!({
+                "method": "PATCH",
+                "path": format!("/v1/data_sources/{src_ds}"),
+                "body": req,
+                "preflight": {
+                    "method": "GET",
+                    "path": format!("/v1/data_sources/{target_ds}"),
+                    "skipped_when_self": self_,
+                }
+            }),
+        )?;
+        return Ok(());
+    }
+
+    let client = build_client(cli)?;
+    // Pre-flight: verify target exists + is shared with integration.
+    // Skip when --self (same DS as source we're about to PATCH).
+    if !self_ {
+        client
+            .retrieve_data_source(&target_ds)
+            .await
+            .map_err(|e| CliError::Api(e))?;
+    }
+    let ds = client.update_data_source(&src_ds, &req).await?;
+    emit(&cli.output_options(), &ds)?;
+    Ok(())
 }
 
 async fn run_update(cli: &Cli, cmd: &UpdateCmd) -> Result<(), CliError> {

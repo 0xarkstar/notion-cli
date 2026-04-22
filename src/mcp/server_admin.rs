@@ -45,9 +45,9 @@ use crate::mcp::common::{to_result, Inner};
 use crate::mcp::handlers;
 use crate::mcp::params::{
     AppendBlockChildrenParams, CreateDataSourceParams, CreatePageParams, DbCreateParams,
-    DeleteBlockParams, DsUpdateParams, GetBlockParams, GetDataSourceParams, GetPageParams,
-    ListBlockChildrenParams, QueryDataSourceParams, SearchParams, UpdateBlockParams,
-    UpdatePageParams,
+    DeleteBlockParams, DsAddRelationParams, DsUpdateParams, GetBlockParams,
+    GetDataSourceParams, GetPageParams, ListBlockChildrenParams, QueryDataSourceParams,
+    SearchParams, UpdateBlockParams, UpdatePageParams,
 };
 
 #[derive(Clone)]
@@ -279,6 +279,24 @@ impl NotionAdmin {
         let result = handlers::ds_update(&self.inner.client, params.0).await;
         self.inner.audit.record(
             &format!("ds_update:{action}"),
+            Some(&target),
+            result.as_ref().map(|_| ()).map_err(|e| e.message.as_ref()),
+        );
+        Ok(to_result(&result?))
+    }
+
+    #[tool(
+        name = "ds_add_relation",
+        description = "Add a relation property to a data source. Convenience wrapper over ds_update — generates correct dual_property/single_property shape with data_source_id (not database_id). Exactly one of `backlink` (two-way with named reciprocal property), `one_way` (no backlink), or `self` (self-referential, same DS as source) required. Pre-flight: GET on target verifies existence + integration sharing. Admin operation — audited."
+    )]
+    async fn ds_add_relation(
+        &self,
+        params: Parameters<DsAddRelationParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let target = params.0.source_data_source_id.clone();
+        let result = handlers::ds_add_relation(&self.inner.client, params.0).await;
+        self.inner.audit.record(
+            "ds_add_relation",
             Some(&target),
             result.as_ref().map(|_| ()).map_err(|e| e.message.as_ref()),
         );

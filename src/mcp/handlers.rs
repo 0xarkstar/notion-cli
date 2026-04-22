@@ -7,8 +7,8 @@ use rmcp::ErrorData;
 
 use crate::api::block::{AppendBlockChildrenRequest, UpdateBlockRequest};
 use crate::api::data_source::{
-    CreateDataSourceParent, CreateDataSourceRequest, QueryDataSourceRequest, SelectKind,
-    UpdateDataSourceRequest,
+    CreateDataSourceParent, CreateDataSourceRequest, QueryDataSourceRequest,
+    RelationDirection, SelectKind, UpdateDataSourceRequest,
 };
 use crate::api::database::{
     CreateDatabaseParent, CreateDatabaseRequest, InitialDataSource,
@@ -18,9 +18,9 @@ use crate::api::search::SearchRequest;
 use crate::api::{ApiError, NotionClient};
 use crate::mcp::params::{
     AppendBlockChildrenParams, CreateDataSourceParams, CreatePageParams, DbCreateParams,
-    DeleteBlockParams, DsUpdateParams, GetBlockParams, GetDataSourceParams, GetPageParams,
-    ListBlockChildrenParams, QueryDataSourceParams, SearchParams, UpdateBlockParams,
-    UpdatePageParams,
+    DeleteBlockParams, DsAddRelationParams, DsUpdateParams, GetBlockParams,
+    GetDataSourceParams, GetPageParams, ListBlockChildrenParams, QueryDataSourceParams,
+    SearchParams, UpdateBlockParams, UpdatePageParams,
 };
 use crate::output::wrap_untrusted;
 use crate::types::block::BlockBody;
@@ -300,6 +300,65 @@ fn field_str<'a>(
 
 fn invalid(msg: impl Into<String>) -> ErrorData {
     ErrorData::invalid_params(msg.into(), None)
+}
+
+pub async fn ds_add_relation(
+    client: &NotionClient,
+    p: DsAddRelationParams,
+) -> Result<serde_json::Value, ErrorData> {
+    let src_ds = validate(
+        DataSourceId::from_url_or_id(&p.source_data_source_id),
+        "source_data_source_id",
+    )?;
+    let self_ref = p.self_ref.unwrap_or(false);
+    let one_way = p.one_way.unwrap_or(false);
+    let has_backlink = p.backlink.is_some();
+    let direction_count =
+        usize::from(has_backlink) + usize::from(one_way) + usize::from(self_ref);
+    if direction_count != 1 {
+        return Err(invalid(
+            "exactly one of backlink, one_way, self required",
+        ));
+    }
+    let target_ds = if self_ref {
+        if let Some(t) = p.target_data_source_id.as_deref() {
+            let parsed = validate(DataSourceId::from_url_or_id(t), "target_data_source_id")?;
+            if parsed.as_str() != src_ds.as_str() {
+                return Err(invalid(
+                    "self=true requires target to equal source (or omit target)",
+                ));
+            }
+            parsed
+        } else {
+            src_ds.clone()
+        }
+    } else {
+        let t = p
+            .target_data_source_id
+            .as_deref()
+            .ok_or_else(|| invalid("target_data_source_id required unless self=true"))?;
+        validate(DataSourceId::from_url_or_id(t), "target_data_source_id")?
+    };
+    let direction = if let Some(b) = p.backlink.as_deref() {
+        RelationDirection::Dual(b.to_string())
+    } else {
+        RelationDirection::OneWay
+    };
+    // Pre-flight on target (skip when self_ref).
+    if !self_ref {
+        client
+            .retrieve_data_source(&target_ds)
+            .await
+            .map_err(|e| api_to_rpc(&e))?;
+    }
+    let req = UpdateDataSourceRequest::add_relation_property(&p.name, target_ds, direction);
+    let ds = client
+        .update_data_source(&src_ds, &req)
+        .await
+        .map_err(|e| api_to_rpc(&e))?;
+    Ok(wrap_untrusted(&serde_json::to_value(ds).map_err(|e| {
+        ErrorData::internal_error(format!("serialize: {e}"), None)
+    })?))
 }
 
 pub async fn db_create(
