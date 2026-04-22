@@ -1,21 +1,24 @@
 # notion-cli
 
-[![CI](https://img.shields.io/badge/tests-130_passed-brightgreen)]()
+[![CI](https://img.shields.io/badge/tests-280_passed-brightgreen)]()
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.85%2B-orange.svg)]()
 
-An agent-first Notion CLI and MCP server, purpose-built for the Notion API 2025-09-03+ data-source model.
+An agent-first Notion CLI and MCP server, purpose-built for the Notion API 2025-09-03+ data-source model. Three-tier MCP privilege model: read-only default, runtime writes, admin lifecycle.
 
 ## Features
 
-- **12 tools** — query, search, get/create/update pages, get/create data sources, full block CRUD (retrieve, list children, append, update, delete)
-- **Page body support** — `page create --children` for one-shot page + body creation
+- **Three-tier MCP** — read-only default (6 tools), `--allow-write` runtime CRUD (12 tools), `--allow-admin` lifecycle ops (16 tools: admin adds database creation, schema mutation, relation wiring, page move)
+- **Admin lifecycle** — `db create`, `ds update` (single-delta: add/remove/rename-property + add-option + bulk), `ds add-relation` (dual/single/self), `page move` via dedicated `/move` endpoint
+- **CLI-only surfaces** — `users list/get`, `comments list/create` (not exposed over MCP by default; CLI-only for privacy/scope)
+- **Page body & icon/cover** — `page create --children` for one-shot page + body; `page update --icon/--cover` tristate (set / clear / leave)
 - **CLI + MCP** — same tool surface accessible via shell commands or as an [MCP](https://modelcontextprotocol.io/) stdio server
 - **Agent-friendly output** — responses wrapped in an untrusted-source envelope with trust metadata; `--raw` for clean piping
 - **Rate limiting** — built-in 3 req/s token bucket with 429 `Retry-After` retry (configurable)
 - **Response size cap** — 10 MiB streaming limit prevents OOM on large payloads
-- **Schema introspection** — `notion-cli schema <type>` emits JSON Schema for 22 property value types, 12 block types, and more
-- **Read-only MCP default** — write tools require explicit `--allow-write`; write operations logged to JSONL audit trail
+- **Schema introspection** — `notion-cli schema <type>` emits JSON Schema for 22 property types, 12 block types, and more
+- **Two-sink audit log** — `NOTION_CLI_AUDIT_LOG` for runtime writes + `NOTION_CLI_ADMIN_LOG` for admin ops; each entry carries a `privilege` field
+- **Destructive safety gate** — TTY-aware prompt on interactive shells; non-TTY requires `--yes`. MCP admin destructive ops gated by `confirm=true` + `NOTION_CLI_ADMIN_CONFIRMED=1` env (two-factor)
 - **Actionable error hints** — common Notion validation errors get one-line remediation suggestions
 - **Structured exit codes** — stable numeric codes (0/2/3/4/10/64/65/74) for scripting and CI
 - **Newtype ID validation** — accepts 32-hex, dashed UUID, or full Notion URLs; rejects homoglyphs and control characters

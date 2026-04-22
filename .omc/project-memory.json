@@ -284,15 +284,21 @@
       "type": "file"
     },
     {
-      "path": "src/types/common.rs",
-      "accessCount": 2,
-      "lastAccessed": 1776858920568,
+      "path": "clawhub/SKILL.md",
+      "accessCount": 3,
+      "lastAccessed": 1776878824955,
       "type": "file"
     },
     {
       "path": "Cargo.toml",
+      "accessCount": 3,
+      "lastAccessed": 1776878841213,
+      "type": "file"
+    },
+    {
+      "path": "src/types/common.rs",
       "accessCount": 2,
-      "lastAccessed": 1776859055869,
+      "lastAccessed": 1776858920568,
       "type": "file"
     },
     {
@@ -341,12 +347,6 @@
       "path": "src/api/error.rs",
       "accessCount": 1,
       "lastAccessed": 1776852029396,
-      "type": "file"
-    },
-    {
-      "path": "clawhub/SKILL.md",
-      "accessCount": 1,
-      "lastAccessed": 1776852044135,
       "type": "file"
     },
     {

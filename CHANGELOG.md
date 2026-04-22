@@ -1,5 +1,145 @@
 # Changelog
 
+## 0.3.0 — 2026-04-23
+
+Adds the full **admin lifecycle surface** that the v0.2 runtime
+boundary left to direct REST calls: database-container creation,
+schema mutation, relation wiring, page relocation, user/comment
+enumeration. The MCP server gains a third tier (`--allow-admin`) on
+top of the v0.2 read-only default and `--allow-write` runtime
+writes.
+
+### BREAKING
+
+- **`DataSource::properties` and `Database::properties` type change**
+  from `HashMap<String, serde_json::Value>` to
+  `HashMap<String, Schema>`. Library consumers that pattern-matched
+  on `serde_json::Value` must migrate to matching on
+  `Schema::Known(PropertySchema)` / `Schema::Raw(Value)`. The `Raw`
+  fallback preserves forward-compatibility: any Notion property-schema
+  variant this crate version does not model still round-trips
+  losslessly through `Schema::Raw`.
+
+### Added — Admin lifecycle (MCP `--allow-admin`, 4 new MCP tools)
+
+- **`db create`** (`db_create` MCP tool) — `POST /v1/databases` with
+  typed `initial_data_source` schema. Parent must be a page (D8 —
+  workspace-parent deferred to v0.4 pending OAuth token support).
+  Local validation enforces at least one `title`-typed property.
+- **`ds update`** (`ds_update` MCP tool) — `PATCH /v1/data_sources/{id}`
+  schema mutation with five actions:
+  - `add-property` — add a new property schema
+  - `remove-property` — destructive (TTY prompts, non-TTY requires
+    `--yes`; MCP requires `confirm=true` + `NOTION_CLI_ADMIN_CONFIRMED=1`
+    env — two-factor gate per D1)
+  - `rename-property` — rename via `{"name": "..."}` directive
+  - `add-option` — append a select/multi-select/status option (Notion
+    merges by name — existing options preserved)
+  - `bulk` — escape hatch for non-atomic multi-delta PATCH (caller
+    accepts partial-failure semantics per D2)
+- **`ds add-relation`** (`ds_add_relation` MCP tool) — convenience
+  wrapper over `ds update` that generates correct
+  `dual_property`/`single_property` wire shape with `data_source_id`
+  (not `database_id` — forward-compat). Pre-flight GET on target DS
+  verifies existence + integration sharing; skipped with `--self`.
+- **`page move`** (`page_move` MCP tool) — uses the dedicated
+  `POST /v1/pages/{id}/move` endpoint introduced on Notion API
+  2026-01-15. `PATCH /v1/pages/{id}` explicitly rejects parent
+  mutation. Target accepts `--to-page` or `--to-data-source`.
+
+### Added — CLI-only (intentionally not over MCP in v0.3)
+
+- **`users list/get`** — workspace user enumeration (auto-paginated,
+  `--bot-only`/`--human-only` client-side filters). CLI-only per D9
+  — workspace PII exfil surface reasons.
+- **`comments list/create`** — list/create comments on pages,
+  blocks, or existing discussions. CLI-only per D10.
+
+### Added — Runtime-tier additions
+
+- **`page update --icon <emoji|url>` and `--cover <url>`** tristate
+  (D11): absent flag leaves unchanged, `--icon none` clears (sends
+  JSON `null`), any value sets. `page create` gains the same flags.
+  Emoji vs external URL parsing: `http(s)://` prefix → external,
+  else emoji literal.
+
+### Added — Agent safety (D1, D3, D5, D6, D13)
+
+- **Three-tier MCP server module split** — `server_ro.rs`,
+  `server_write.rs`, `server_admin.rs`, each with its own
+  `#[tool_router]` impl sharing `handlers.rs` bodies. Module
+  boundary is the invariant: an admin-only tool added to the wrong
+  file cannot leak into a lower-privilege tier (D5).
+- **MCP tool-list snapshot regression test** — `tests/mcp_server.rs`
+  asserts the exact tool set per tier byte-for-byte. Tripwire
+  against cross-tier drift (D13).
+- **Admin audit log sink** — new `NOTION_CLI_ADMIN_LOG` env
+  alongside existing `NOTION_CLI_AUDIT_LOG`. Admin-tool invocations
+  route to the admin sink; each entry gains a `privilege` field
+  ("write" | "admin") for merge-safe grep/jq (D6).
+- **Destructive TTY-aware confirmation** — `std::io::IsTerminal`
+  detection: TTY prompts `(y/N)`, non-TTY requires `--yes` (exit 2
+  Validation — safety gate, not Usage). MCP equivalent is
+  `confirm=true` param PLUS `NOTION_CLI_ADMIN_CONFIRMED=1` env
+  (two-factor per D1).
+- **Threat-model framing**: `--allow-admin` is **tool-exposure
+  policy**, not a security sandbox (D3). An agent with an
+  admin-scoped token and code execution can hit the API directly;
+  the flag attenuates prompt-injection and accidental action,
+  documented explicitly in SKILL.md.
+
+### Added — Shared types
+
+- **`PropertySchema` enum** (22 variants) distinct from
+  `PropertyValue`. Wrapped by `Schema { Known | Raw }` untagged
+  fallback mirroring v0.2's `Property` pattern. Shares only leaves
+  (`SelectOption`, `StatusOption`) to prevent schema-vs-value
+  correctness hazards.
+- **`Icon` / `Cover` enums** (emoji / external / file variants)
+  shared between page/database/data-source objects.
+- **`User` / `Comment` types** for the new CLI-only surfaces.
+- **`MoveTarget` + `ParentForMove`** enums for `page move`.
+
+### Added — Distribution
+
+- SKILL.md v2 restructured into "Agent tools (MCP)" and "Operator
+  CLI" sections. Declares `NOTION_CLI_AUDIT_LOG`,
+  `NOTION_CLI_ADMIN_LOG`, `NOTION_CLI_ADMIN_CONFIRMED` in
+  `metadata.openclaw.requires.env`. Admin vocabulary is framed as
+  least-privilege tool exposure rather than security claim.
+
+### Changed
+
+- `UpdatePageRequest`: `icon` and `cover` now use
+  `Option<Option<_>>` tristate (`None` = skip field,
+  `Some(None)` = `null` clear, `Some(Some(v))` = set). Library
+  consumers constructing the struct directly must add `icon: None,
+  cover: None` to existing literals (or use struct-update syntax).
+- `CreatePageRequest`: gains `icon: Option<Icon>` and
+  `cover: Option<Cover>` (non-tristate — set or omit).
+- `CLI mcp` gains `--allow-admin` (mutually exclusive with
+  `--allow-write`) and `--admin-log <path>` flags.
+- `AuditLog::new_with_admin(write_path, admin_path)` constructor
+  added alongside the existing `AuditLog::new(write_path)`.
+
+### Verification
+
+- **280 tests** (up from 198 in v0.2): +82 covering the new surface
+  (PropertySchema proptest roundtrip, admin-command wiremock,
+  tristate icon/cover, CLI integration, MCP snapshot regression,
+  two-sink audit, D1 confirm gate).
+- `cargo clippy --all-targets -- -D warnings` clean.
+- D12 smoke test: confirmed `POST /v1/pages/{id}/move` per Notion
+  docs changelog 2026-01-15.
+
+### Migration from 0.2.0
+
+If you construct `CreatePageRequest` / `UpdatePageRequest`
+literals: add `icon: None, cover: None`. If you read
+`DataSource.properties` or `Database.properties`: migrate from
+`serde_json::Value` matching to `Schema::{Known,Raw}` matching.
+Unknown-variant round-trip is preserved via `Schema::Raw`.
+
 ## 0.2.0 — 2026-04-17
 
 Adds block CRUD — the missing piece for authoring page bodies — plus
