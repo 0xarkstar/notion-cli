@@ -1,0 +1,318 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1776851334186,
+  "projectRoot": "/Users/arkstar/Projects/notion-cli",
+  "techStack": {
+    "languages": [
+      {
+        "name": "Rust",
+        "version": "1.85",
+        "confidence": "high",
+        "markers": [
+          "Cargo.toml"
+        ]
+      }
+    ],
+    "frameworks": [],
+    "packageManager": "cargo",
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": "cargo build",
+    "testCommand": "cargo test",
+    "lintCommand": "cargo clippy",
+    "devCommand": "cargo run",
+    "scripts": {}
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "examples",
+      "scripts",
+      "src",
+      "tests"
+    ],
+    "gitBranches": {
+      "defaultBranch": "main",
+      "branchingStrategy": null
+    }
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "clawhub": {
+      "path": "clawhub",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1776851334175,
+      "keyFiles": [
+        "SKILL.md"
+      ]
+    },
+    "examples": {
+      "path": "examples",
+      "purpose": "Example code",
+      "fileCount": 2,
+      "lastAccessed": 1776851334176,
+      "keyFiles": [
+        "print_schema.rs",
+        "smoke.rs"
+      ]
+    },
+    "scripts": {
+      "path": "scripts",
+      "purpose": "Build/utility scripts",
+      "fileCount": 1,
+      "lastAccessed": 1776851334176,
+      "keyFiles": [
+        "live-mcp-test.sh"
+      ]
+    },
+    "src": {
+      "path": "src",
+      "purpose": "Source code",
+      "fileCount": 5,
+      "lastAccessed": 1776851334176,
+      "keyFiles": [
+        "config.rs",
+        "error.rs",
+        "lib.rs",
+        "main.rs",
+        "output.rs"
+      ]
+    },
+    "target": {
+      "path": "target",
+      "purpose": null,
+      "fileCount": 2,
+      "lastAccessed": 1776851334176,
+      "keyFiles": [
+        "CACHEDIR.TAG"
+      ]
+    },
+    "tests": {
+      "path": "tests",
+      "purpose": "Test files",
+      "fileCount": 12,
+      "lastAccessed": 1776851334176,
+      "keyFiles": [
+        "api_mock.rs",
+        "audit_log.rs",
+        "block_api.rs",
+        "block_roundtrip.rs",
+        "cli.rs"
+      ]
+    },
+    "src/api": {
+      "path": "src/api",
+      "purpose": "API routes",
+      "fileCount": 10,
+      "lastAccessed": 1776851334177,
+      "keyFiles": [
+        "block.rs",
+        "client.rs",
+        "data_source.rs"
+      ]
+    },
+    "src/types": {
+      "path": "src/types",
+      "purpose": "Type definitions",
+      "fileCount": 10,
+      "lastAccessed": 1776851334177,
+      "keyFiles": [
+        "block.rs",
+        "common.rs",
+        "data_source.rs"
+      ]
+    }
+  },
+  "hotPaths": [
+    {
+      "path": "src/types/property.rs",
+      "accessCount": 3,
+      "lastAccessed": 1776858920633,
+      "type": "file"
+    },
+    {
+      "path": "src/types/mod.rs",
+      "accessCount": 3,
+      "lastAccessed": 1776859131448,
+      "type": "file"
+    },
+    {
+      "path": "src/types/data_source.rs",
+      "accessCount": 3,
+      "lastAccessed": 1776859145291,
+      "type": "file"
+    },
+    {
+      "path": "src/types/database.rs",
+      "accessCount": 3,
+      "lastAccessed": 1776859154419,
+      "type": "file"
+    },
+    {
+      "path": "src/mcp/server.rs",
+      "accessCount": 2,
+      "lastAccessed": 1776852043329,
+      "type": "file"
+    },
+    {
+      "path": "src/cli/mcp.rs",
+      "accessCount": 2,
+      "lastAccessed": 1776852044109,
+      "type": "file"
+    },
+    {
+      "path": "src/mcp/audit.rs",
+      "accessCount": 2,
+      "lastAccessed": 1776852044580,
+      "type": "file"
+    },
+    {
+      "path": "src/cli/ds.rs",
+      "accessCount": 2,
+      "lastAccessed": 1776852049947,
+      "type": "file"
+    },
+    {
+      "path": "src/cli/page.rs",
+      "accessCount": 2,
+      "lastAccessed": 1776852050706,
+      "type": "file"
+    },
+    {
+      "path": "src/api/data_source.rs",
+      "accessCount": 2,
+      "lastAccessed": 1776852051060,
+      "type": "file"
+    },
+    {
+      "path": "src/types/common.rs",
+      "accessCount": 2,
+      "lastAccessed": 1776858920568,
+      "type": "file"
+    },
+    {
+      "path": "Cargo.toml",
+      "accessCount": 2,
+      "lastAccessed": 1776859055869,
+      "type": "file"
+    },
+    {
+      "path": "src/types/page.rs",
+      "accessCount": 1,
+      "lastAccessed": 1776852009402,
+      "type": "file"
+    },
+    {
+      "path": "src/api/database.rs",
+      "accessCount": 1,
+      "lastAccessed": 1776852011277,
+      "type": "file"
+    },
+    {
+      "path": "src/api/page.rs",
+      "accessCount": 1,
+      "lastAccessed": 1776852011709,
+      "type": "file"
+    },
+    {
+      "path": "src/api/client.rs",
+      "accessCount": 1,
+      "lastAccessed": 1776852011831,
+      "type": "file"
+    },
+    {
+      "path": "src/mcp/handlers.rs",
+      "accessCount": 1,
+      "lastAccessed": 1776852016732,
+      "type": "file"
+    },
+    {
+      "path": "src/mcp/params.rs",
+      "accessCount": 1,
+      "lastAccessed": 1776852017985,
+      "type": "file"
+    },
+    {
+      "path": "src/mcp/mod.rs",
+      "accessCount": 1,
+      "lastAccessed": 1776852018387,
+      "type": "file"
+    },
+    {
+      "path": "src/cli/mod.rs",
+      "accessCount": 1,
+      "lastAccessed": 1776852018628,
+      "type": "file"
+    },
+    {
+      "path": "src/cli/db.rs",
+      "accessCount": 1,
+      "lastAccessed": 1776852019885,
+      "type": "file"
+    },
+    {
+      "path": "src/cli/schema.rs",
+      "accessCount": 1,
+      "lastAccessed": 1776852021015,
+      "type": "file"
+    },
+    {
+      "path": "src/cli/error.rs",
+      "accessCount": 1,
+      "lastAccessed": 1776852022364,
+      "type": "file"
+    },
+    {
+      "path": "src/output.rs",
+      "accessCount": 1,
+      "lastAccessed": 1776852028942,
+      "type": "file"
+    },
+    {
+      "path": "src/api/error.rs",
+      "accessCount": 1,
+      "lastAccessed": 1776852029396,
+      "type": "file"
+    },
+    {
+      "path": "clawhub/SKILL.md",
+      "accessCount": 1,
+      "lastAccessed": 1776852044135,
+      "type": "file"
+    },
+    {
+      "path": "src/lib.rs",
+      "accessCount": 1,
+      "lastAccessed": 1776859055390,
+      "type": "file"
+    },
+    {
+      "path": "tests/property_roundtrip.rs",
+      "accessCount": 1,
+      "lastAccessed": 1776859056019,
+      "type": "file"
+    },
+    {
+      "path": "src/types/property_schema.rs",
+      "accessCount": 1,
+      "lastAccessed": 1776859117552,
+      "type": "file"
+    },
+    {
+      "path": "tests/property_schema_roundtrip.rs",
+      "accessCount": 1,
+      "lastAccessed": 1776859916967,
+      "type": "file"
+    }
+  ],
+  "userDirectives": []
+}

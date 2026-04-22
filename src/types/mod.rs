@@ -5,6 +5,7 @@ pub mod database;
 pub mod filter;
 pub mod page;
 pub mod property;
+pub mod property_schema;
 pub mod rich_text;
 pub mod sort;
 
@@ -20,5 +21,10 @@ pub use database::{Database, DataSourceRef};
 pub use filter::{FilterExpression, PropertyFilter};
 pub use page::Page;
 pub use property::{Property, PropertyValue};
+pub use property_schema::{
+    DualPropertyConfig, EmptyConfig, FormulaConfig, MultiSelectConfig, NumberConfig,
+    NumberFormat, PropertySchema, RelationConfig, RelationKind, RollupConfig, Schema,
+    SelectConfig, StatusConfig, StatusGroup, UniqueIdConfig,
+};
 pub use rich_text::{Annotations, Link, RichText, RichTextContent, TextContent};
 pub use sort::{SortCriterion, SortDirection, TimestampKind};

@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::types::property_schema::Schema;
 use crate::types::rich_text::RichText;
 use crate::validation::{DataSourceId, DatabaseId};
 
@@ -16,6 +17,14 @@ use crate::validation::{DataSourceId, DatabaseId};
 /// pointing at the owning database. We keep `parent` as raw JSON
 /// because it is untyped across the different parent kinds (database
 /// / page / workspace); surface-side parsing happens at use sites.
+///
+/// # `properties` typing (v0.3 BREAKING)
+///
+/// `properties` is `HashMap<String, Schema>` as of v0.3. v0.2 read
+/// this as `HashMap<String, serde_json::Value>`. Consumers who did
+/// `.get(name).and_then(|v| v.get("type"))` must migrate to matching
+/// on [`Schema::Known`] / [`Schema::Raw`]. The `Raw` fallback
+/// preserves forward-compat for unknown property types.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DataSource {
     pub id: DataSourceId,
@@ -26,7 +35,7 @@ pub struct DataSource {
     #[serde(default)]
     pub description: Vec<RichText>,
     #[serde(default)]
-    pub properties: HashMap<String, serde_json::Value>,
+    pub properties: HashMap<String, Schema>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<serde_json::Value>,
     #[serde(default)]
