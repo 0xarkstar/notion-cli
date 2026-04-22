@@ -23,9 +23,10 @@ use notion_cli::api::data_source::{
 use notion_cli::api::database::{
     CreateDatabaseParent, CreateDatabaseRequest, InitialDataSource,
 };
+use notion_cli::api::comment::{CommentParent, CreateCommentRequest, ListCommentsOptions};
 use notion_cli::api::page::{CreatePageRequest, MoveTarget, PageParent, UpdatePageRequest};
 use notion_cli::api::user::ListUsersOptions;
-use notion_cli::validation::UserId;
+use notion_cli::validation::{BlockId, UserId};
 use notion_cli::config::NotionToken;
 use notion_cli::types::icon::Icon;
 use notion_cli::types::property::PropertyValue;
@@ -940,6 +941,109 @@ async fn update_page_with_icon_none_tristate_skips_field() {
         .await
         .unwrap();
     assert_eq!(page.id.as_str(), PAGE_ID_HEX);
+}
+
+// === Comments (CLI-only, D10) =============================================
+
+#[tokio::test]
+async fn list_comments_passes_block_id_query_param() {
+    let block_hex = "11111111111111111111111111111111";
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/comments"))
+        .and(wiremock::matchers::query_param("block_id", block_hex))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "object": "list",
+            "results": [],
+            "has_more": false,
+            "next_cursor": null,
+        })))
+        .mount(&server)
+        .await;
+    let client = make_client(&server);
+    let resp = client
+        .list_comments(&ListCommentsOptions {
+            block_id: BlockId::parse(block_hex).unwrap(),
+            page_size: None,
+            start_cursor: None,
+        })
+        .await
+        .unwrap();
+    assert!(resp.is_exhausted());
+}
+
+#[tokio::test]
+async fn create_comment_top_level_on_page_sends_parent_page_id() {
+    let page_hex = "22222222222222222222222222222222";
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/comments"))
+        .and(body_json(json!({
+            "parent": {"page_id": page_hex},
+            "rich_text": [{
+                "type": "text",
+                "text": {"content": "hi"},
+                "annotations": {
+                    "bold": false, "italic": false, "strikethrough": false,
+                    "underline": false, "code": false, "color": "default"
+                },
+                "plain_text": "hi"
+            }]
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "object": "comment",
+            "id": "c-1",
+            "parent": {"type": "page_id", "page_id": page_hex},
+            "discussion_id": "d-1",
+            "rich_text": []
+        })))
+        .mount(&server)
+        .await;
+    let client = make_client(&server);
+    let req = CreateCommentRequest {
+        parent: Some(CommentParent {
+            page_id: PageId::parse(page_hex).unwrap(),
+        }),
+        discussion_id: None,
+        rich_text: notion_cli::types::rich_text::RichText::plain("hi"),
+    };
+    let c = client.create_comment(&req).await.unwrap();
+    assert_eq!(c.discussion_id, "d-1");
+}
+
+#[tokio::test]
+async fn create_comment_in_discussion_sends_discussion_id() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/comments"))
+        .and(body_json(json!({
+            "discussion_id": "d-existing",
+            "rich_text": [{
+                "type": "text",
+                "text": {"content": "reply"},
+                "annotations": {
+                    "bold": false, "italic": false, "strikethrough": false,
+                    "underline": false, "code": false, "color": "default"
+                },
+                "plain_text": "reply"
+            }]
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "object": "comment",
+            "id": "c-2",
+            "discussion_id": "d-existing",
+            "rich_text": []
+        })))
+        .mount(&server)
+        .await;
+    let client = make_client(&server);
+    let req = CreateCommentRequest {
+        parent: None,
+        discussion_id: Some("d-existing".into()),
+        rich_text: notion_cli::types::rich_text::RichText::plain("reply"),
+    };
+    let c = client.create_comment(&req).await.unwrap();
+    assert_eq!(c.id, "c-2");
 }
 
 // === Users (CLI-only, D9) =================================================

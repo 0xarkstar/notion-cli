@@ -1,4 +1,5 @@
 pub mod block;
+pub mod comment;
 pub mod common;
 pub mod data_source;
 pub mod database;
@@ -15,6 +16,7 @@ pub use block::{
     Block, BlockBody, CalloutBlock, CodeBlock, EmptyBlock, HeadingBlock, TextBlock,
     ToDoBlock, TypedBlock,
 };
+pub use comment::Comment;
 pub use common::{
     Color, DateValue, RelationRef, SelectOption, StatusOption, UniqueIdValue, UserRef,
 };

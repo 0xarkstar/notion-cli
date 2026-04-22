@@ -19,6 +19,7 @@
 //! - 74: I/O error
 
 pub mod block;
+pub mod comment;
 pub mod db;
 pub mod ds;
 pub mod error;
@@ -88,6 +89,9 @@ pub enum Command {
     /// User enumeration (CLI-only — not exposed over MCP in v0.3).
     #[command(subcommand)]
     Users(user::UsersCmd),
+    /// Comments on pages / blocks (CLI-only — not exposed over MCP in v0.3).
+    #[command(subcommand)]
+    Comments(comment::CommentsCmd),
     /// Start an MCP stdio server for agent integration (Hermes, Claude).
     Mcp(mcp::McpArgs),
 }
@@ -123,6 +127,7 @@ pub async fn run(cli: Cli) -> Result<(), CliError> {
         Command::Search(args) => search::run(&cli, args).await,
         Command::Schema(args) => schema::run(&cli, args),
         Command::Users(cmd) => user::run(&cli, cmd).await,
+        Command::Comments(cmd) => comment::run(&cli, cmd).await,
         Command::Mcp(args) => mcp::run(&cli, args).await,
     }
 }

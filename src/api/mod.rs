@@ -16,6 +16,7 @@
 
 pub mod block;
 pub mod client;
+pub mod comment;
 pub mod data_source;
 pub mod database;
 pub mod error;

@@ -551,6 +551,121 @@ fn ds_update_add_option_emits_merge_delta() {
     assert_eq!(first_color, Some("red"));
 }
 
+// === comments (v0.3 CLI-only, D10) ======================================
+
+#[test]
+fn comments_list_on_page_check_request_emits_block_id_query() {
+    let assert = cli()
+        .args([
+            "--check-request",
+            "--raw",
+            "comments",
+            "list",
+            "--on-page",
+            VALID_ID,
+        ])
+        .assert()
+        .success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let parsed: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    assert_eq!(parsed.get("method").and_then(|v| v.as_str()), Some("GET"));
+    assert_eq!(parsed.get("path").and_then(|v| v.as_str()), Some("/v1/comments"));
+    assert_eq!(
+        parsed
+            .pointer("/query/block_id")
+            .and_then(|v| v.as_str()),
+        Some(VALID_ID),
+    );
+}
+
+#[test]
+fn comments_list_without_target_flag_exits_64() {
+    let assert = cli()
+        .args(["--check-request", "comments", "list"])
+        .assert()
+        .failure();
+    assert_eq!(assert.get_output().status.code(), Some(64));
+}
+
+#[test]
+fn comments_create_on_page_emits_parent_page_id_body() {
+    let assert = cli()
+        .args([
+            "--check-request",
+            "--raw",
+            "comments",
+            "create",
+            "--on-page",
+            VALID_ID,
+            "--text",
+            "hello",
+        ])
+        .assert()
+        .success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let parsed: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    assert_eq!(
+        parsed
+            .pointer("/body/parent/page_id")
+            .and_then(|v| v.as_str()),
+        Some(VALID_ID),
+    );
+    assert!(
+        parsed
+            .pointer("/body/discussion_id")
+            .is_none(),
+        "discussion_id must be absent when --on-page is used",
+    );
+}
+
+#[test]
+fn comments_create_in_discussion_emits_discussion_id_body() {
+    let assert = cli()
+        .args([
+            "--check-request",
+            "--raw",
+            "comments",
+            "create",
+            "--in-discussion",
+            "d-abc",
+            "--text",
+            "reply",
+        ])
+        .assert()
+        .success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let parsed: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    assert_eq!(
+        parsed
+            .pointer("/body/discussion_id")
+            .and_then(|v| v.as_str()),
+        Some("d-abc"),
+    );
+    assert!(
+        parsed.pointer("/body/parent").is_none(),
+        "parent must be absent when --in-discussion is used",
+    );
+}
+
+#[test]
+fn comments_create_with_both_on_page_and_in_discussion_exits_64() {
+    let assert = cli()
+        .args([
+            "--check-request",
+            "comments",
+            "create",
+            "--on-page",
+            VALID_ID,
+            "--in-discussion",
+            "d-abc",
+            "--text",
+            "bad",
+        ])
+        .assert()
+        .failure();
+    assert_eq!(assert.get_output().status.code(), Some(64));
+}
+
 // === users (v0.3 CLI-only, D9) ==========================================
 
 #[test]
@@ -592,7 +707,7 @@ fn users_list_bot_only_client_filter_emitted() {
 #[test]
 fn users_list_bot_and_human_flags_are_mutually_exclusive() {
     // Clap's conflicts_with on --human-only rejects both flags at parse.
-    let assert = cli()
+    cli()
         .args([
             "--check-request",
             "users",
