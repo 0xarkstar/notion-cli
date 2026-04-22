@@ -155,7 +155,7 @@ pub async fn create_page(
         .map(|v| parse_json(v, "children"))
         .transpose()?
         .unwrap_or_default();
-    let icon = parse_icon_flag_mcp(p.icon.as_deref())?;
+    let icon = parse_icon_flag_mcp(p.icon.as_deref());
     let cover = parse_cover_flag_mcp(p.cover.as_deref())?;
     let req = CreatePageRequest {
         parent,
@@ -181,7 +181,7 @@ pub async fn update_page(
         .map(|v| parse_json(v, "properties"))
         .transpose()?
         .unwrap_or_default();
-    let icon = parse_icon_flag_mcp(p.icon.as_deref())?;
+    let icon = parse_icon_flag_mcp(p.icon.as_deref());
     let cover = parse_cover_flag_mcp(p.cover.as_deref())?;
     let req = UpdatePageRequest {
         properties,
@@ -292,7 +292,7 @@ fn build_ds_update(p: &DsUpdateParams) -> Result<UpdateDataSourceRequest, ErrorD
                 .body
                 .as_ref()
                 .ok_or_else(|| invalid("bulk: 'body' required"))?;
-            UpdateDataSourceRequest::from_bulk(body.clone())
+            UpdateDataSourceRequest::from_bulk(body)
                 .map_err(|e| invalid(format!("bulk: {e}")))
         }
         other => Err(invalid(format!(
@@ -318,17 +318,19 @@ fn invalid(msg: impl Into<String>) -> ErrorData {
 ///
 /// - `None` → field absent (no change to page)
 /// - `Some("none")` case-insensitive → `Some(None)` (clear)
-/// - `Some(value)` → `Some(Some(Icon))` (parse_cli: http prefix → external, else emoji)
-fn parse_icon_flag_mcp(value: Option<&str>) -> Result<Option<Option<Icon>>, ErrorData> {
-    Ok(match value {
+/// - `Some(value)` → `Some(Some(Icon))` (`parse_cli`: http prefix → external, else emoji)
+#[allow(clippy::option_option)]
+fn parse_icon_flag_mcp(value: Option<&str>) -> Option<Option<Icon>> {
+    match value {
         None => None,
         Some(v) if v.eq_ignore_ascii_case("none") => Some(None),
         Some(v) => Some(Some(Icon::parse_cli(v))),
-    })
+    }
 }
 
 /// Parse MCP `cover` flag value. Covers accept URLs only — `"none"`
 /// clears, anything else must be a URL.
+#[allow(clippy::option_option)]
 fn parse_cover_flag_mcp(value: Option<&str>) -> Result<Option<Option<Cover>>, ErrorData> {
     Ok(match value {
         None => None,

@@ -134,15 +134,33 @@
   },
   "hotPaths": [
     {
-      "path": "tests/api_mock.rs",
-      "accessCount": 19,
-      "lastAccessed": 1776878174159,
+      "path": "src/mcp/handlers.rs",
+      "accessCount": 21,
+      "lastAccessed": 1776881712029,
       "type": "file"
     },
     {
-      "path": "src/mcp/handlers.rs",
-      "accessCount": 17,
-      "lastAccessed": 1776876629137,
+      "path": "tests/api_mock.rs",
+      "accessCount": 21,
+      "lastAccessed": 1776881787799,
+      "type": "file"
+    },
+    {
+      "path": "src/cli/ds.rs",
+      "accessCount": 14,
+      "lastAccessed": 1776881658688,
+      "type": "file"
+    },
+    {
+      "path": "src/mcp/params.rs",
+      "accessCount": 12,
+      "lastAccessed": 1776881743300,
+      "type": "file"
+    },
+    {
+      "path": "tests/cli.rs",
+      "accessCount": 12,
+      "lastAccessed": 1776881816024,
       "type": "file"
     },
     {
@@ -152,27 +170,15 @@
       "type": "file"
     },
     {
-      "path": "src/cli/ds.rs",
-      "accessCount": 10,
-      "lastAccessed": 1776878394768,
-      "type": "file"
-    },
-    {
-      "path": "tests/cli.rs",
-      "accessCount": 10,
-      "lastAccessed": 1776878401607,
-      "type": "file"
-    },
-    {
       "path": "src/api/data_source.rs",
-      "accessCount": 8,
-      "lastAccessed": 1776865235859,
+      "accessCount": 11,
+      "lastAccessed": 1776881637208,
       "type": "file"
     },
     {
       "path": "src/cli/page.rs",
-      "accessCount": 8,
-      "lastAccessed": 1776876710507,
+      "accessCount": 9,
+      "lastAccessed": 1776881665152,
       "type": "file"
     },
     {
@@ -185,12 +191,6 @@
       "path": "src/cli/mod.rs",
       "accessCount": 8,
       "lastAccessed": 1776878138172,
-      "type": "file"
-    },
-    {
-      "path": "src/mcp/params.rs",
-      "accessCount": 7,
-      "lastAccessed": 1776876618007,
       "type": "file"
     },
     {
@@ -218,6 +218,12 @@
       "type": "file"
     },
     {
+      "path": "tests/property_schema_roundtrip.rs",
+      "accessCount": 5,
+      "lastAccessed": 1776881810600,
+      "type": "file"
+    },
+    {
       "path": "src/cli/mcp.rs",
       "accessCount": 4,
       "lastAccessed": 1776860517994,
@@ -233,6 +239,12 @@
       "path": "clawhub/SKILL.md",
       "accessCount": 4,
       "lastAccessed": 1776880067529,
+      "type": "file"
+    },
+    {
+      "path": "src/cli/user.rs",
+      "accessCount": 4,
+      "lastAccessed": 1776881667779,
       "type": "file"
     },
     {
@@ -278,12 +290,6 @@
       "type": "file"
     },
     {
-      "path": "src/cli/user.rs",
-      "accessCount": 3,
-      "lastAccessed": 1776877646647,
-      "type": "file"
-    },
-    {
       "path": "src/api/mod.rs",
       "accessCount": 3,
       "lastAccessed": 1776878104344,
@@ -293,6 +299,12 @@
       "path": "Cargo.toml",
       "accessCount": 3,
       "lastAccessed": 1776878841213,
+      "type": "file"
+    },
+    {
+      "path": "src/api/user.rs",
+      "accessCount": 3,
+      "lastAccessed": 1776881646714,
       "type": "file"
     },
     {
@@ -332,6 +344,12 @@
       "type": "file"
     },
     {
+      "path": "src/api/comment.rs",
+      "accessCount": 2,
+      "lastAccessed": 1776881640600,
+      "type": "file"
+    },
+    {
       "path": "src/types/page.rs",
       "accessCount": 1,
       "lastAccessed": 1776852009402,
@@ -365,12 +383,6 @@
       "path": "src/types/property_schema.rs",
       "accessCount": 1,
       "lastAccessed": 1776859117552,
-      "type": "file"
-    },
-    {
-      "path": "tests/property_schema_roundtrip.rs",
-      "accessCount": 1,
-      "lastAccessed": 1776859916967,
       "type": "file"
     },
     {
@@ -410,21 +422,9 @@
       "type": "file"
     },
     {
-      "path": "src/api/user.rs",
-      "accessCount": 1,
-      "lastAccessed": 1776877602638,
-      "type": "file"
-    },
-    {
       "path": "src/types/comment.rs",
       "accessCount": 1,
       "lastAccessed": 1776878087121,
-      "type": "file"
-    },
-    {
-      "path": "src/api/comment.rs",
-      "accessCount": 1,
-      "lastAccessed": 1776878104066,
       "type": "file"
     },
     {

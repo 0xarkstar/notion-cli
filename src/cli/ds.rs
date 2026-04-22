@@ -66,10 +66,10 @@ pub enum DsCmd {
     /// Add a relation property — convenience wrapper over `ds update`.
     ///
     /// Exactly one direction flag required: `--backlink <name>` for
-    /// two-way (dual_property), `--one-way` for single_property, or
-    /// `--self` for self-referential. Pre-flight: GET on the target
-    /// DS to verify it exists and is shared with the integration
-    /// (skipped when `--self`).
+    /// two-way (`dual_property`), `--one-way` for `single_property`,
+    /// or `--self` for self-referential. Pre-flight: GET on the
+    /// target DS to verify it exists and is shared with the
+    /// integration (skipped when `--self`).
     AddRelation {
         /// Source data source ID or URL.
         id: String,
@@ -177,6 +177,7 @@ impl From<SelectKindArg> for SelectKind {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 pub async fn run(cli: &Cli, cmd: &DsCmd) -> Result<(), CliError> {
     match cmd {
         DsCmd::Get { id } => {
@@ -361,7 +362,7 @@ async fn run_add_relation(
         client
             .retrieve_data_source(&target_ds)
             .await
-            .map_err(|e| CliError::Api(e))?;
+            .map_err(CliError::Api)?;
     }
     let ds = client.update_data_source(&src_ds, &req).await?;
     emit(&cli.output_options(), &ds)?;
@@ -437,7 +438,7 @@ fn build_update(cmd: &UpdateCmd) -> Result<(DataSourceId, UpdateDataSourceReques
             })?;
             let json: serde_json::Value = serde_json::from_str(&text)
                 .map_err(|e| CliError::Validation(format!("--body JSON: {e}")))?;
-            let req = UpdateDataSourceRequest::from_bulk(json)
+            let req = UpdateDataSourceRequest::from_bulk(&json)
                 .map_err(|e| CliError::Validation(format!("bulk: {e}")))?;
             Ok((ds_id, req))
         }

@@ -7,7 +7,7 @@
 //!    `Schema::Raw` — forward-compat contract.
 //! 3. `Schema::Raw` cannot be recovered as a writable schema.
 //! 4. Concrete wire-format fixtures match Notion's documented shapes
-//!    (select options, relation dual_property, status groups).
+//!    (select options, relation `dual_property`, status groups).
 
 use notion_cli::types::common::{Color, SelectOption, StatusOption};
 use notion_cli::types::property_schema::{
@@ -387,7 +387,7 @@ fn rollup_schema_full_shape() {
 
 // === v0.2 forward-compat =================================================
 
-/// A v0.2 consumer who wrote a `properties` HashMap as
+/// A v0.2 consumer who wrote a `properties` `HashMap` as
 /// `HashMap<String, serde_json::Value>` can still deserialise v0.3
 /// responses into `HashMap<String, Schema>` — the Raw fallback
 /// catches any variant this crate version does not model.

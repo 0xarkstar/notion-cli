@@ -91,7 +91,7 @@ pub struct CreatePageParams {
     /// Icon: emoji literal (e.g. `"🚀"`) or `http(s)://` URL.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
-    /// Cover image URL (http(s)://, URL-only — Notion covers have no
+    /// Cover image URL (`http(s)://`, URL-only — Notion covers have no
     /// emoji form).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cover: Option<String>,
@@ -118,6 +118,7 @@ pub struct UpdatePageParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cover: Option<String>,
 }
+
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct CreateDataSourceParams {
@@ -161,8 +162,8 @@ pub struct DsUpdateParams {
     ///   `NOTION_CLI_ADMIN_CONFIRMED=1` env (D1 two-factor gate).
     /// - `rename_property` needs: `name` (old), `new_name`.
     /// - `add_option` needs: `property`, `kind`
-    ///   (select|multi_select|status), `option` (object with `name`
-    ///   and optional `color`).
+    ///   (`select` | `multi_select` | `status`), `option` (object
+    ///   with `name` and optional `color`).
     /// - `bulk` needs: `body` (full `UpdateDataSourceRequest` JSON).
     ///   Non-atomic — caller accepts partial failure.
     pub action: String,
@@ -204,7 +205,7 @@ pub struct DsAddRelationParams {
     /// `one_way` and `self`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backlink: Option<String>,
-    /// One-way relation (single_property). Mutually exclusive with
+    /// One-way relation (`single_property`). Mutually exclusive with
     /// `backlink` and `self`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub one_way: Option<bool>,

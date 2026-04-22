@@ -123,6 +123,8 @@ async fn run() -> Result<(), String> {
         },
         properties: props,
         children: vec![],
+        icon: None,
+        cover: None,
     };
     let created = step("create_page", client.create_page(&create_req)).await?;
     let new_page_id = created.id.clone();
@@ -179,6 +181,8 @@ async fn run() -> Result<(), String> {
         properties: HashMap::new(),
         archived: None,
         in_trash: Some(true),
+        icon: None,
+        cover: None,
     };
     step(
         "update_page_archive",
@@ -259,11 +263,12 @@ fn make_text(content: &str) -> RichText {
 }
 
 fn find_title_in_schema(
-    schema: &std::collections::HashMap<String, serde_json::Value>,
+    schema: &std::collections::HashMap<String, notion_cli::types::Schema>,
 ) -> Option<String> {
+    use notion_cli::types::PropertySchema;
     schema
         .iter()
-        .find(|(_, v)| v.get("type").and_then(|t| t.as_str()) == Some("title"))
+        .find(|(_, s)| matches!(s.as_known(), Some(PropertySchema::Title { .. })))
         .map(|(k, _)| k.clone())
 }
 

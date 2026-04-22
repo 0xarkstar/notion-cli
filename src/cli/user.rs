@@ -1,7 +1,7 @@
 //! `notion-cli users *` — CLI-only user enumeration (D9).
 //!
 //! Not exposed over MCP in v0.3. Workspace user enumeration is a
-//! privacy-adjacent surface; the BlueNode bootstrap didn't require
+//! privacy-adjacent surface; the `BlueNode` bootstrap didn't require
 //! it. Revisit MCP exposure in v0.4 if a concrete agent use case
 //! emerges.
 

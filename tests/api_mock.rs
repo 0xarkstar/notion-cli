@@ -524,7 +524,7 @@ async fn ds_update_bulk_passes_raw_body_through() {
         .await;
 
     let client = make_client(&server);
-    let req = UpdateDataSourceRequest::from_bulk(body).unwrap();
+    let req = UpdateDataSourceRequest::from_bulk(&body).unwrap();
     let ds = client
         .update_data_source(&DataSourceId::parse(DS_ID_HEX).unwrap(), &req)
         .await
@@ -541,7 +541,7 @@ fn select_kind_wire_keys_match_notion_shapes() {
 
 #[test]
 fn ds_update_bulk_rejects_non_object_body() {
-    let err = UpdateDataSourceRequest::from_bulk(json!([1, 2, 3])).unwrap_err();
+    let err = UpdateDataSourceRequest::from_bulk(&json!([1, 2, 3])).unwrap_err();
     assert!(
         err.to_lowercase().contains("object"),
         "expected object-type hint: {err}"

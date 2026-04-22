@@ -2,7 +2,7 @@
 //!
 //! v0.3 ships these as **CLI-only** (no MCP exposure per D9) —
 //! workspace user enumeration is a privacy-adjacent surface that
-//! nothing in the BlueNode bootstrap needed. Revisit v0.4 if a
+//! nothing in the `BlueNode` bootstrap needed. Revisit v0.4 if a
 //! real agent use case emerges.
 
 use url::Url;
@@ -30,6 +30,11 @@ impl NotionClient {
     /// Callers that want the full list should paginate by feeding
     /// `resp.next_cursor` back into `options.start_cursor` until
     /// `has_more == false`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal query-builder Url cannot parse
+    /// `"http://x/"` — a static string that will always parse.
     pub async fn list_users(
         &self,
         options: &ListUsersOptions,

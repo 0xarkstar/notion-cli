@@ -154,6 +154,7 @@ impl UpdateDataSourceRequest {
     /// status property. Notion merges by option name — pre-existing
     /// options are preserved.
     #[must_use]
+    #[allow(clippy::needless_pass_by_value)]
     pub fn add_option(prop_name: &str, kind: SelectKind, option: SelectOption) -> Self {
         let mut props = serde_json::Map::new();
         let key = kind.wire_key();
@@ -167,9 +168,10 @@ impl UpdateDataSourceRequest {
 
     /// Single-delta convenience: add a relation property. Uses
     /// `data_source_id` (not `database_id`) per the API 2025-09-03+
-    /// migration. Direction is either one-way (single_property) or
-    /// two-way (dual_property with a backlink name).
+    /// migration. Direction is either one-way (`single_property`) or
+    /// two-way (`dual_property` with a backlink name).
     #[must_use]
+    #[allow(clippy::needless_pass_by_value)]
     pub fn add_relation_property(
         prop_name: &str,
         target: DataSourceId,
@@ -199,7 +201,7 @@ impl UpdateDataSourceRequest {
     /// Escape hatch (`--bulk`): take a caller-supplied JSON body
     /// verbatim. Caller accepts non-atomic semantics (partial-failure
     /// leaves schema mid-state per D2).
-    pub fn from_bulk(body: serde_json::Value) -> Result<Self, String> {
+    pub fn from_bulk(body: &serde_json::Value) -> Result<Self, String> {
         let obj = body
             .as_object()
             .ok_or_else(|| "bulk body must be a JSON object".to_string())?;
@@ -209,13 +211,13 @@ impl UpdateDataSourceRequest {
                 serde_json::from_value(t).map_err(|e| format!("title: {e}"))?,
             );
         }
-        if let Some(p) = obj.get("properties").and_then(|v| v.as_object()) {
-            req.properties = p.clone();
+        if let Some(p) = obj.get("properties").and_then(serde_json::Value::as_object) {
+            req.properties.clone_from(p);
         }
-        if let Some(a) = obj.get("archived").and_then(|v| v.as_bool()) {
+        if let Some(a) = obj.get("archived").and_then(serde_json::Value::as_bool) {
             req.archived = Some(a);
         }
-        if let Some(t) = obj.get("in_trash").and_then(|v| v.as_bool()) {
+        if let Some(t) = obj.get("in_trash").and_then(serde_json::Value::as_bool) {
             req.in_trash = Some(t);
         }
         Ok(req)

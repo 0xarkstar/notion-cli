@@ -281,6 +281,7 @@ pub async fn run(cli: &Cli, cmd: &PageCmd) -> Result<(), CliError> {
 /// - absent flag → `None` (leave unchanged)
 /// - `--icon none` → `Some(None)` (clear)
 /// - `--icon <value>` → `Some(Some(Icon))` (set: URL → external, else emoji)
+#[allow(clippy::option_option)]
 fn parse_icon_flag(value: Option<&str>) -> Option<Option<Icon>> {
     match value {
         None => None,
@@ -291,6 +292,7 @@ fn parse_icon_flag(value: Option<&str>) -> Option<Option<Icon>> {
 
 /// Parse `--cover <value>` tristate for page update. Covers accept
 /// URLs only — `"none"` clears, any non-URL value errors.
+#[allow(clippy::option_option)]
 fn parse_cover_flag(value: Option<&str>) -> Result<Option<Option<Cover>>, String> {
     match value {
         None => Ok(None),

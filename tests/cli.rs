@@ -496,7 +496,7 @@ fn ds_add_relation_self_skips_target_and_sets_preflight_marker() {
     // Preflight skipped flag visible in check-request output.
     let skipped = parsed
         .pointer("/preflight/skipped_when_self")
-        .and_then(|v| v.as_bool());
+        .and_then(serde_json::Value::as_bool);
     assert_eq!(skipped, Some(true));
 }
 

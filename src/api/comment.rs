@@ -52,6 +52,13 @@ pub struct CreateCommentRequest {
 }
 
 impl NotionClient {
+    /// List comments on a block. A page ID is also a valid block ID
+    /// here — both share the `/v1/comments?block_id=<id>` query.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal query-builder Url cannot parse
+    /// `"http://x/"` — a static string that will always parse.
     pub async fn list_comments(
         &self,
         options: &ListCommentsOptions,
