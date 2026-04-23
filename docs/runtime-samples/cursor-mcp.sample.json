@@ -1,0 +1,24 @@
+{
+  "_comment": "SAMPLE ONLY — NOT ENFORCED / NOT CANONICAL. Canonical source: clawhub/SKILL.md",
+  "_usage": "Merge the 'mcpServers' block into your ~/.cursor/mcp.json",
+  "mcpServers": {
+    "notion": {
+      "command": "notion-cli",
+      "args": ["mcp"],
+      "env": {
+        "NOTION_TOKEN": "ntn_your_token_here"
+      }
+    },
+    "notion_write": {
+      "command": "notion-cli",
+      "args": [
+        "mcp",
+        "--allow-write",
+        "--audit-log", "/tmp/notion-audit.jsonl"
+      ],
+      "env": {
+        "NOTION_TOKEN": "ntn_your_token_here"
+      }
+    }
+  }
+}

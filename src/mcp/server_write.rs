@@ -1,4 +1,4 @@
-//! Write MCP tier — 12 tools (6 RO + 6 write), opt-in via
+//! Write MCP tier — 13 tools (7 RO + 6 write), opt-in via
 //! `--allow-write`.
 //!
 //! Runtime CRUD surface: create/update pages, create data sources,
@@ -23,7 +23,7 @@ use crate::mcp::handlers;
 use crate::mcp::params::{
     AppendBlockChildrenParams, CreateDataSourceParams, CreatePageParams, DeleteBlockParams,
     GetBlockParams, GetDataSourceParams, GetPageParams, ListBlockChildrenParams,
-    QueryDataSourceParams, SearchParams, UpdateBlockParams, UpdatePageParams,
+    QueryDataSourceParams, SearchParams, UpdateBlockParams, UpdatePageParams, UsersMeParams,
 };
 
 #[derive(Clone)]
@@ -100,6 +100,17 @@ impl NotionWrite {
         ))
     }
 
+    #[tool(
+        name = "users_me",
+        description = "Retrieve the bot user tied to the current integration token. Returns only the caller's own identity — does NOT enumerate workspace users."
+    )]
+    async fn users_me(
+        &self,
+        _params: Parameters<UsersMeParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        Ok(to_result(&handlers::users_me(&self.inner.client).await?))
+    }
+
     // --- writes -----------------------------------------------------
 
     #[tool(
@@ -110,6 +121,7 @@ impl NotionWrite {
         &self,
         params: Parameters<CreatePageParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        let request_id = crate::observability::RequestId::new();
         let target = params
             .0
             .parent_data_source_id
@@ -120,6 +132,7 @@ impl NotionWrite {
             "create_page",
             target.as_deref(),
             result.as_ref().map(|_| ()).map_err(|e| e.message.as_ref()),
+            Some(request_id.as_str()),
         );
         Ok(to_result(&result?))
     }
@@ -132,12 +145,14 @@ impl NotionWrite {
         &self,
         params: Parameters<UpdatePageParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        let request_id = crate::observability::RequestId::new();
         let target = params.0.page_id.clone();
         let result = handlers::update_page(&self.inner.client, params.0).await;
         self.inner.audit.record(
             "update_page",
             Some(&target),
             result.as_ref().map(|_| ()).map_err(|e| e.message.as_ref()),
+            Some(request_id.as_str()),
         );
         Ok(to_result(&result?))
     }
@@ -150,12 +165,14 @@ impl NotionWrite {
         &self,
         params: Parameters<CreateDataSourceParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        let request_id = crate::observability::RequestId::new();
         let target = params.0.parent_database_id.clone();
         let result = handlers::create_data_source(&self.inner.client, params.0).await;
         self.inner.audit.record(
             "create_data_source",
             Some(&target),
             result.as_ref().map(|_| ()).map_err(|e| e.message.as_ref()),
+            Some(request_id.as_str()),
         );
         Ok(to_result(&result?))
     }
@@ -168,12 +185,14 @@ impl NotionWrite {
         &self,
         params: Parameters<AppendBlockChildrenParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        let request_id = crate::observability::RequestId::new();
         let target = params.0.block_id.clone();
         let result = handlers::append_block_children(&self.inner.client, params.0).await;
         self.inner.audit.record(
             "append_block_children",
             Some(&target),
             result.as_ref().map(|_| ()).map_err(|e| e.message.as_ref()),
+            Some(request_id.as_str()),
         );
         Ok(to_result(&result?))
     }
@@ -186,12 +205,14 @@ impl NotionWrite {
         &self,
         params: Parameters<UpdateBlockParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        let request_id = crate::observability::RequestId::new();
         let target = params.0.block_id.clone();
         let result = handlers::update_block(&self.inner.client, params.0).await;
         self.inner.audit.record(
             "update_block",
             Some(&target),
             result.as_ref().map(|_| ()).map_err(|e| e.message.as_ref()),
+            Some(request_id.as_str()),
         );
         Ok(to_result(&result?))
     }
@@ -204,12 +225,14 @@ impl NotionWrite {
         &self,
         params: Parameters<DeleteBlockParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        let request_id = crate::observability::RequestId::new();
         let target = params.0.block_id.clone();
         let result = handlers::delete_block(&self.inner.client, params.0).await;
         self.inner.audit.record(
             "delete_block",
             Some(&target),
             result.as_ref().map(|_| ()).map_err(|e| e.message.as_ref()),
+            Some(request_id.as_str()),
         );
         Ok(to_result(&result?))
     }

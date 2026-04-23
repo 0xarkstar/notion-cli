@@ -8,6 +8,7 @@ use notion_cli::cli::{run, Cli};
 
 #[tokio::main]
 async fn main() -> ExitCode {
+    notion_cli::observability::tracing_setup::init();
     let cli = Cli::parse();
     match run(cli).await {
         Ok(()) => ExitCode::SUCCESS,

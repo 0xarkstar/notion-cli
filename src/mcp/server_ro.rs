@@ -1,4 +1,4 @@
-//! Read-only MCP tier — 6 query/read tools, no mutations.
+//! Read-only MCP tier — 7 query/read tools, no mutations.
 //!
 //! Default tier. Exposed without any flags. Safe for any agent
 //! runtime — no write path, no schema mutation, no admin ops.
@@ -14,7 +14,7 @@ use crate::mcp::common::{to_result, Inner};
 use crate::mcp::handlers;
 use crate::mcp::params::{
     GetBlockParams, GetDataSourceParams, GetPageParams, ListBlockChildrenParams,
-    QueryDataSourceParams, SearchParams,
+    QueryDataSourceParams, SearchParams, UsersMeParams,
 };
 
 #[derive(Clone)]
@@ -90,6 +90,17 @@ impl NotionReadOnly {
         Ok(to_result(
             &handlers::list_block_children(&self.inner.client, params.0).await?,
         ))
+    }
+
+    #[tool(
+        name = "users_me",
+        description = "Retrieve the bot user tied to the current integration token. Returns only the caller's own identity — does NOT enumerate workspace users."
+    )]
+    async fn users_me(
+        &self,
+        _params: Parameters<UsersMeParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        Ok(to_result(&handlers::users_me(&self.inner.client).await?))
     }
 }
 

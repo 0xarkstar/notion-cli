@@ -1,6 +1,6 @@
 # notion-cli
 
-[![CI](https://img.shields.io/badge/tests-280_passed-brightgreen)]()
+[![CI](https://img.shields.io/badge/tests-358_passed-brightgreen)]()
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.85%2B-orange.svg)]()
 
@@ -8,9 +8,18 @@ An agent-first Notion CLI and MCP server, purpose-built for the Notion API 2025-
 
 ## Features
 
-- **Three-tier MCP** — read-only default (6 tools), `--allow-write` runtime CRUD (12 tools), `--allow-admin` lifecycle ops (16 tools: admin adds database creation, schema mutation, relation wiring, page move)
-- **Admin lifecycle** — `db create`, `ds update` (single-delta: add/remove/rename-property + add-option + bulk), `ds add-relation` (dual/single/self), `page move` via dedicated `/move` endpoint
-- **CLI-only surfaces** — `users list/get`, `comments list/create` (not exposed over MCP by default; CLI-only for privacy/scope)
+- **Three-tier MCP** — read-only default (7 tools), `--allow-write` runtime CRUD (13 tools), `--allow-admin` lifecycle ops (18 tools)
+- **Admin lifecycle** — `db create`, `db update` (incl. parent move via PATCH), `ds update` (single-delta: add/remove/rename-property + add-option + bulk), `ds add-relation` (dual/single/self), `page move` via dedicated `/move` endpoint
+- **Bot self-identity** — `users me` (MCP `users_me` RO tool) returns the bot's own identity without enumerating workspace PII
+- **Universal `--json <body>`** — zero-translation agent path on all 7 mutation commands; stdin / `@file` / literal modes; mutually exclusive with bespoke flags (exit 2 on mixed)
+- **NDJSON streaming** — `--stream` / `--format=jsonl` on 5 paginated commands (`ds query`, `block list`, `search`, `users list`, `comments list`) with explicit `item` / `end` / `error` frames
+- **`--check-request --cost`** — API call count + rate-limit window preview without contacting Notion
+- **Field-mask page reads** — `page get --properties <ids>` (Notion `filter_properties`) and `page get-property <page> <prop-id>` for paginated relation/rollup/people properties
+- **Observability** — per-request UUID v7 `request_id` propagated to audit log; `tracing` subscriber; OTel exporter behind cargo feature `otel`
+- **GET response cache** — opt-in via `NOTION_CLI_CACHE_TTL`; writes auto-invalidate by entity
+- **Idempotency-Key** — auto-generated on POST/PATCH; MCP callers can override via `idempotency_key` param
+- **Token chain** — env → file → keychain (macOS) → exec; stderr warning on shadowing
+- **CLI-only surfaces** — `users list/get`, `comments list/create` (not exposed over MCP; privacy / scope)
 - **Page body & icon/cover** — `page create --children` for one-shot page + body; `page update --icon/--cover` tristate (set / clear / leave)
 - **CLI + MCP** — same tool surface accessible via shell commands or as an [MCP](https://modelcontextprotocol.io/) stdio server
 - **Agent-friendly output** — responses wrapped in an untrusted-source envelope with trust metadata; `--raw` for clean piping

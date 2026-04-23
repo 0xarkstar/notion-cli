@@ -13,8 +13,9 @@ use crate::api::data_source::{
     CreateDataSourceParent, CreateDataSourceRequest, QueryDataSourceRequest,
     RelationDirection, SelectKind, UpdateDataSourceRequest,
 };
+use crate::cli::json_body::{parse_json_body, reject_json_with_bespoke};
 use crate::cli::{build_client, Cli, CliError};
-use crate::output::emit;
+use crate::output::{emit, emit_stream_end, emit_stream_error, emit_stream_item};
 use crate::types::common::SelectOption;
 use crate::types::property_schema::PropertySchema;
 use crate::types::rich_text::RichText;
@@ -48,13 +49,18 @@ pub enum DsCmd {
     Create {
         /// Parent database ID or URL.
         #[arg(long)]
-        parent: String,
+        parent: Option<String>,
         /// Plain-text title.
         #[arg(long)]
         title: Option<String>,
         /// Property schema JSON (e.g. `{"Name":{"title":{}}}`).
         #[arg(long)]
-        properties: String,
+        properties: Option<String>,
+        /// Full `CreateDataSourceRequest` body as JSON (literal, `-` for
+        /// stdin, or `@path` for file). Mutually exclusive with all
+        /// bespoke flags.
+        #[arg(long)]
+        json: Option<String>,
     },
     /// Mutate a data source's schema (single-delta per invocation).
     ///
@@ -158,6 +164,16 @@ pub enum UpdateCmd {
         #[arg(long)]
         body: PathBuf,
     },
+    /// Direct JSON body update (agent-first principle #1). Pass the
+    /// full `UpdateDataSourceRequest` as a JSON string, `-` for stdin,
+    /// or `@path` for a file. Partial-failure semantics apply (same as
+    /// `bulk`).
+    Json {
+        /// Data source ID or URL.
+        id: String,
+        /// JSON body: literal, `-` (stdin), or `@path`.
+        body: String,
+    },
 }
 
 #[derive(Copy, Clone, Debug, ValueEnum)]
@@ -183,7 +199,7 @@ pub async fn run(cli: &Cli, cmd: &DsCmd) -> Result<(), CliError> {
         DsCmd::Get { id } => {
             let ds_id = DataSourceId::from_url_or_id(id)
                 .map_err(|e| CliError::Validation(format!("data source id: {e}")))?;
-            if cli.check_request {
+            if cli.is_dry_run() {
                 emit(
                     &cli.output_options(),
                     &serde_json::json!({
@@ -224,7 +240,7 @@ pub async fn run(cli: &Cli, cmd: &DsCmd) -> Result<(), CliError> {
                 start_cursor: start_cursor.clone(),
                 page_size: *page_size,
             };
-            if cli.check_request {
+            if cli.is_dry_run() {
                 emit(
                     &cli.output_options(),
                     &serde_json::json!({
@@ -236,6 +252,37 @@ pub async fn run(cli: &Cli, cmd: &DsCmd) -> Result<(), CliError> {
                 return Ok(());
             }
             let client = build_client(cli)?;
+            if cli.is_stream() {
+                // Stream mode: paginate automatically, emit one frame per row.
+                let mut cur_req = req;
+                let mut last_cursor: Option<String> = None;
+                loop {
+                    let resp = match client.query_data_source(&ds_id, &cur_req).await {
+                        Ok(r) => r,
+                        Err(e) => {
+                            emit_stream_error(
+                                last_cursor.as_deref(),
+                                "api_error",
+                                &e.to_string(),
+                            )?;
+                            return Err(CliError::Api(e));
+                        }
+                    };
+                    last_cursor.clone_from(&resp.next_cursor);
+                    for page in &resp.results {
+                        emit_stream_item(&serde_json::to_value(page)?)?;
+                    }
+                    if resp.is_exhausted() {
+                        emit_stream_end(resp.next_cursor.as_deref())?;
+                        break;
+                    }
+                    cur_req = QueryDataSourceRequest {
+                        start_cursor: resp.next_cursor,
+                        ..cur_req
+                    };
+                }
+                return Ok(());
+            }
             let resp = client.query_data_source(&ds_id, &req).await?;
             emit(&cli.output_options(), &resp)?;
             Ok(())
@@ -244,22 +291,40 @@ pub async fn run(cli: &Cli, cmd: &DsCmd) -> Result<(), CliError> {
             parent,
             title,
             properties,
+            json,
         } => {
-            let db_id = DatabaseId::from_url_or_id(parent)
-                .map_err(|e| CliError::Validation(format!("--parent: {e}")))?;
-            let props: serde_json::Value = serde_json::from_str(properties)
-                .map_err(|e| CliError::Validation(format!("--properties: {e}")))?;
-            let title_vec = title
-                .as_deref()
-                .filter(|s| !s.is_empty())
-                .map(RichText::plain)
-                .unwrap_or_default();
-            let req = CreateDataSourceRequest {
-                parent: CreateDataSourceParent::database(db_id),
-                title: title_vec,
-                properties: props,
+            let req: CreateDataSourceRequest = if let Some(raw) = json {
+                reject_json_with_bespoke(true, &[
+                    ("--parent", parent.is_some()),
+                    ("--title", title.is_some()),
+                    ("--properties", properties.is_some()),
+                ])?;
+                let val = parse_json_body(raw)?;
+                serde_json::from_value(val)
+                    .map_err(|e| CliError::Validation(format!("--json body: {e}")))?
+            } else {
+                let parent_str = parent.as_deref().ok_or_else(|| {
+                    CliError::Usage("--parent required (or use --json)".into())
+                })?;
+                let props_str = properties.as_deref().ok_or_else(|| {
+                    CliError::Usage("--properties required (or use --json)".into())
+                })?;
+                let db_id = DatabaseId::from_url_or_id(parent_str)
+                    .map_err(|e| CliError::Validation(format!("--parent: {e}")))?;
+                let props: serde_json::Value = serde_json::from_str(props_str)
+                    .map_err(|e| CliError::Validation(format!("--properties: {e}")))?;
+                let title_vec = title
+                    .as_deref()
+                    .filter(|s| !s.is_empty())
+                    .map(RichText::plain)
+                    .unwrap_or_default();
+                CreateDataSourceRequest {
+                    parent: CreateDataSourceParent::database(db_id),
+                    title: title_vec,
+                    properties: props,
+                }
             };
-            if cli.check_request {
+            if cli.is_dry_run() {
                 emit(
                     &cli.output_options(),
                     &serde_json::json!({
@@ -338,7 +403,7 @@ async fn run_add_relation(
 
     let req = UpdateDataSourceRequest::add_relation_property(name, target_ds.clone(), direction);
 
-    if cli.check_request {
+    if cli.is_dry_run() {
         emit(
             &cli.output_options(),
             &serde_json::json!({
@@ -371,7 +436,7 @@ async fn run_add_relation(
 
 async fn run_update(cli: &Cli, cmd: &UpdateCmd) -> Result<(), CliError> {
     let (ds_id, req) = build_update(cmd)?;
-    if cli.check_request {
+    if cli.is_dry_run() {
         emit(
             &cli.output_options(),
             &serde_json::json!({
@@ -440,6 +505,13 @@ fn build_update(cmd: &UpdateCmd) -> Result<(DataSourceId, UpdateDataSourceReques
                 .map_err(|e| CliError::Validation(format!("--body JSON: {e}")))?;
             let req = UpdateDataSourceRequest::from_bulk(&json)
                 .map_err(|e| CliError::Validation(format!("bulk: {e}")))?;
+            Ok((ds_id, req))
+        }
+        UpdateCmd::Json { id, body } => {
+            let ds_id = parse_ds_id(id)?;
+            let val = parse_json_body(body)?;
+            let req = UpdateDataSourceRequest::from_bulk(&val)
+                .map_err(|e| CliError::Validation(format!("--json body: {e}")))?;
             Ok((ds_id, req))
         }
     }

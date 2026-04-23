@@ -30,6 +30,8 @@ struct AuditEntry<'a> {
     target: Option<&'a str>,
     result: &'a str,
     error: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    request_id: Option<&'a str>,
 }
 
 #[derive(Default)]
@@ -73,8 +75,9 @@ impl AuditLog {
         tool: &str,
         target: Option<&str>,
         result: Result<(), &str>,
+        request_id: Option<&str>,
     ) {
-        self.append(self.write_path.as_deref(), "write", tool, target, result);
+        self.append(self.write_path.as_deref(), "write", tool, target, result, request_id);
     }
 
     /// Record an admin lifecycle operation. Goes to the admin sink.
@@ -83,8 +86,9 @@ impl AuditLog {
         tool: &str,
         target: Option<&str>,
         result: Result<(), &str>,
+        request_id: Option<&str>,
     ) {
-        self.append(self.admin_path.as_deref(), "admin", tool, target, result);
+        self.append(self.admin_path.as_deref(), "admin", tool, target, result, request_id);
     }
 
     fn append(
@@ -94,6 +98,7 @@ impl AuditLog {
         tool: &str,
         target: Option<&str>,
         result: Result<(), &str>,
+        request_id: Option<&str>,
     ) {
         let Some(path) = path else { return };
         let ts = SystemTime::now()
@@ -111,6 +116,7 @@ impl AuditLog {
             target,
             result: result_str,
             error,
+            request_id,
         };
         let line = match serde_json::to_string(&entry) {
             Ok(s) => s,

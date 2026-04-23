@@ -95,6 +95,10 @@ pub struct CreatePageParams {
     /// emoji form).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cover: Option<String>,
+    /// Optional caller-supplied idempotency key. Auto-generated UUID v4
+    /// is used when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idempotency_key: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -117,6 +121,9 @@ pub struct UpdatePageParams {
     /// unchanged.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cover: Option<String>,
+    /// Optional caller-supplied idempotency key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idempotency_key: Option<String>,
 }
 
 
@@ -131,6 +138,9 @@ pub struct CreateDataSourceParams {
     /// Property schemas. Example:
     /// `{"Name": {"title": {}}, "Tags": {"multi_select": {"options": []}}}`.
     pub properties: serde_json::Value,
+    /// Optional caller-supplied idempotency key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idempotency_key: Option<String>,
 }
 
 // === Admin tier params ====================================================
@@ -147,6 +157,9 @@ pub struct PageMoveParams {
     /// `target_page_id`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_data_source_id: Option<String>,
+    /// Optional caller-supplied idempotency key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idempotency_key: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -189,6 +202,9 @@ pub struct DsUpdateParams {
     /// Two-factor gate bit for destructive actions (D1).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub confirm: Option<bool>,
+    /// Optional caller-supplied idempotency key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idempotency_key: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -213,6 +229,9 @@ pub struct DsAddRelationParams {
     /// Skips pre-flight GET on the target.
     #[serde(default, rename = "self", skip_serializing_if = "Option::is_none")]
     pub self_ref: Option<bool>,
+    /// Optional caller-supplied idempotency key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idempotency_key: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -238,6 +257,9 @@ pub struct DbCreateParams {
     /// Mark as inline (rendered inside the parent page).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub is_inline: Option<bool>,
+    /// Optional caller-supplied idempotency key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idempotency_key: Option<String>,
 }
 
 // === Block params =========================================================
@@ -275,6 +297,9 @@ pub struct AppendBlockChildrenParams {
     /// Optional: append after this sibling block ID.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub after: Option<String>,
+    /// Optional caller-supplied idempotency key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idempotency_key: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -299,9 +324,60 @@ pub struct UpdateBlockParams {
     pub archived: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub in_trash: Option<bool>,
+    /// Optional caller-supplied idempotency key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idempotency_key: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct DeleteBlockParams {
     pub block_id: String,
+    /// Optional caller-supplied idempotency key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idempotency_key: Option<String>,
+}
+
+// === v0.4 params ==========================================================
+
+/// `users_me` — no params; returns the bot user tied to the token.
+/// D9 exception (see handoff-v0.4.md §D9-ex): safe to expose because
+/// it returns only the caller's own identity (not workspace PII).
+#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
+pub struct UsersMeParams {}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct DbUpdateParams {
+    /// Database ID (32-hex or dashed, or a database URL).
+    pub database_id: String,
+    /// Move database to a new parent page. Exactly one of
+    /// `to_page_id`, `to_workspace`, OR neither (for metadata-only
+    /// updates) should be set. Setting both is rejected.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to_page_id: Option<String>,
+    /// Move database to workspace root. Requires OAuth user token —
+    /// integration tokens typically return 403 (E10).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to_workspace: Option<bool>,
+    /// Update title (plain text).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// Update description (plain text).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Update icon: emoji literal OR `http(s)://` URL. JSON `null`
+    /// clears the icon.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<serde_json::Value>,
+    /// Update cover: URL. JSON `null` clears.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cover: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_inline: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_locked: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub in_trash: Option<bool>,
+    /// Optional caller-supplied idempotency key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idempotency_key: Option<String>,
 }

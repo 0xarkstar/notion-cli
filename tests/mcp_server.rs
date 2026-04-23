@@ -54,7 +54,7 @@ fn extract_tool_names(stdout: &str) -> Vec<String> {
 }
 
 #[test]
-fn read_only_mode_exposes_6_tools() {
+fn read_only_mode_exposes_7_tools() {
     let out = run_mcp(&[]);
     let tools = extract_tool_names(&out);
     assert_eq!(
@@ -66,13 +66,14 @@ fn read_only_mode_exposes_6_tools() {
             "list_block_children".to_string(),
             "query_data_source".to_string(),
             "search".to_string(),
+            "users_me".to_string(),
         ],
         "unexpected tool set:\n{out}",
     );
 }
 
 #[test]
-fn allow_write_mode_exposes_12_tools() {
+fn allow_write_mode_exposes_13_tools() {
     let out = run_mcp(&["--allow-write"]);
     let tools = extract_tool_names(&out);
     assert_eq!(
@@ -90,6 +91,7 @@ fn allow_write_mode_exposes_12_tools() {
             "search".to_string(),
             "update_block".to_string(),
             "update_page".to_string(),
+            "users_me".to_string(),
         ],
         "unexpected tool set:\n{out}",
     );
@@ -126,13 +128,13 @@ fn create_data_source_tool_is_exposed_in_write_mode() {
 /// D13 admin-tier snapshot — regression tripwire.
 ///
 /// Admin tier = v0.2's 12 write-tier tools + the v0.3 admin
-/// lifecycle tools. Each v0.3 admin command (tasks 18-22) extends
+/// lifecycle tools + v0.4 additions. Each new command extends
 /// this assertion when its tool lands. Do NOT loosen the equality
 /// — it guards against cross-tier drift per D5/D13.
 ///
 /// Current admin tools landed: `db_create` (#1), `ds_update` (#2),
-/// `ds_add_relation` (#3), `page_move` (#4). All v0.3 admin commands
-/// now live in admin tier.
+/// `ds_add_relation` (#3), `page_move` (#4), `db_update` (v0.4 M5),
+/// `users_me` (v0.4 M4). Total: 18 tools (13 write + 5 admin).
 #[test]
 fn allow_admin_mode_exposes_expected_tool_set() {
     let out = run_mcp(&["--allow-admin"]);
@@ -144,6 +146,7 @@ fn allow_admin_mode_exposes_expected_tool_set() {
             "create_data_source".to_string(),
             "create_page".to_string(),
             "db_create".to_string(),
+            "db_update".to_string(),
             "delete_block".to_string(),
             "ds_add_relation".to_string(),
             "ds_update".to_string(),
@@ -156,6 +159,7 @@ fn allow_admin_mode_exposes_expected_tool_set() {
             "search".to_string(),
             "update_block".to_string(),
             "update_page".to_string(),
+            "users_me".to_string(),
         ],
         "admin tier tool set regression:\n{out}",
     );
@@ -163,11 +167,12 @@ fn allow_admin_mode_exposes_expected_tool_set() {
 
 /// Invariant: admin-only tools must NOT leak into the write tier.
 /// Every new admin command must add its tool name to the list below.
+/// Note: `users_me` is intentionally NOT in this list — write tier exposes it (it's in RO).
 #[test]
 fn admin_tools_are_not_exposed_in_write_mode() {
     let out = run_mcp(&["--allow-write"]);
     let tools = extract_tool_names(&out);
-    for admin_tool in ["db_create", "ds_update", "ds_add_relation", "page_move"] {
+    for admin_tool in ["db_create", "ds_update", "ds_add_relation", "page_move", "db_update"] {
         assert!(
             !tools.contains(&admin_tool.to_string()),
             "admin tool `{admin_tool}` leaked into --allow-write mode:\n{tools:?}",

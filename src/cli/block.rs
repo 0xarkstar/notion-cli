@@ -4,7 +4,7 @@ use clap::Subcommand;
 
 use crate::api::block::{parse_children, AppendBlockChildrenRequest, UpdateBlockRequest};
 use crate::cli::{build_client, Cli, CliError};
-use crate::output::emit;
+use crate::output::{emit, emit_stream_end, emit_stream_error, emit_stream_item};
 use crate::types::block::BlockBody;
 use crate::validation::BlockId;
 
@@ -65,7 +65,7 @@ pub async fn run(cli: &Cli, cmd: &BlockCmd) -> Result<(), CliError> {
         BlockCmd::Get { id } => {
             let block_id = BlockId::from_url_or_id(id)
                 .map_err(|e| CliError::Validation(format!("block id: {e}")))?;
-            if cli.check_request {
+            if cli.is_dry_run() {
                 emit(&cli.output_options(), &serde_json::json!({
                     "method": "GET",
                     "path": format!("/v1/blocks/{block_id}"),
@@ -80,7 +80,7 @@ pub async fn run(cli: &Cli, cmd: &BlockCmd) -> Result<(), CliError> {
         BlockCmd::List { id, start_cursor, page_size } => {
             let block_id = BlockId::from_url_or_id(id)
                 .map_err(|e| CliError::Validation(format!("block id: {e}")))?;
-            if cli.check_request {
+            if cli.is_dry_run() {
                 let mut qs = url::form_urlencoded::Serializer::new(String::new());
                 if let Some(c) = start_cursor {
                     qs.append_pair("start_cursor", c);
@@ -101,6 +101,36 @@ pub async fn run(cli: &Cli, cmd: &BlockCmd) -> Result<(), CliError> {
                 return Ok(());
             }
             let client = build_client(cli)?;
+            if cli.is_stream() {
+                let mut cur_cursor = start_cursor.clone();
+                let mut last_cursor: Option<String> = None;
+                loop {
+                    let resp = match client
+                        .list_block_children(&block_id, cur_cursor.as_deref(), *page_size)
+                        .await
+                    {
+                        Ok(r) => r,
+                        Err(e) => {
+                            emit_stream_error(
+                                last_cursor.as_deref(),
+                                "api_error",
+                                &e.to_string(),
+                            )?;
+                            return Err(CliError::Api(e));
+                        }
+                    };
+                    last_cursor.clone_from(&resp.next_cursor);
+                    for block in &resp.results {
+                        emit_stream_item(&serde_json::to_value(block)?)?;
+                    }
+                    if resp.is_exhausted() {
+                        emit_stream_end(resp.next_cursor.as_deref())?;
+                        break;
+                    }
+                    cur_cursor = resp.next_cursor;
+                }
+                return Ok(());
+            }
             let resp = client
                 .list_block_children(&block_id, start_cursor.as_deref(), *page_size)
                 .await?;
@@ -121,7 +151,7 @@ pub async fn run(cli: &Cli, cmd: &BlockCmd) -> Result<(), CliError> {
                 children: child_bodies,
                 after: after_id,
             };
-            if cli.check_request {
+            if cli.is_dry_run() {
                 emit(&cli.output_options(), &serde_json::json!({
                     "method": "PATCH",
                     "path": format!("/v1/blocks/{block_id}/children"),
@@ -147,7 +177,7 @@ pub async fn run(cli: &Cli, cmd: &BlockCmd) -> Result<(), CliError> {
                 archived: *archived,
                 in_trash: *in_trash,
             };
-            if cli.check_request {
+            if cli.is_dry_run() {
                 emit(&cli.output_options(), &serde_json::json!({
                     "method": "PATCH",
                     "path": format!("/v1/blocks/{block_id}"),
@@ -163,7 +193,7 @@ pub async fn run(cli: &Cli, cmd: &BlockCmd) -> Result<(), CliError> {
         BlockCmd::Delete { id } => {
             let block_id = BlockId::from_url_or_id(id)
                 .map_err(|e| CliError::Validation(format!("block id: {e}")))?;
-            if cli.check_request {
+            if cli.is_dry_run() {
                 emit(&cli.output_options(), &serde_json::json!({
                     "method": "DELETE",
                     "path": format!("/v1/blocks/{block_id}"),

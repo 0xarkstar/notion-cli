@@ -23,19 +23,30 @@ pub mod comment;
 pub mod db;
 pub mod ds;
 pub mod error;
+pub mod json_body;
 pub mod mcp;
 pub mod page;
 pub mod schema;
 pub mod search;
 pub mod user;
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 
 use crate::api::NotionClient;
 use crate::config::NotionToken;
 use crate::output::OutputOptions;
+use crate::token_provider::TokenChain;
 
 pub use error::CliError;
+
+/// Output format selector (Principle #4).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
+pub enum OutputFormat {
+    /// Aggregated JSON envelope (default).
+    Json,
+    /// NDJSON stream — one frame per line. Equivalent to `--stream`.
+    Jsonl,
+}
 
 #[derive(Parser, Debug)]
 #[command(
@@ -44,6 +55,7 @@ pub use error::CliError;
     about = "Agent-First Notion CLI and MCP server",
     long_about = None,
 )]
+#[allow(clippy::struct_excessive_bools)] // global flags are inherently boolean
 pub struct Cli {
     /// Validate the request locally; do not call Notion.
     ///
@@ -63,6 +75,28 @@ pub struct Cli {
     /// Notion integration token (defaults to $`NOTION_TOKEN`).
     #[arg(long, env = "NOTION_TOKEN", hide_env_values = true, global = true)]
     pub token: Option<String>,
+
+    /// Alias for `--check-request` (Justin Poehnelt agent-first CLI
+    /// principle #6 — name alignment). Mutually exclusive with
+    /// `--check-request`.
+    #[arg(long, global = true, conflicts_with = "check_request")]
+    pub dry_run: bool,
+
+    /// When combined with `--check-request` / `--dry-run`, emit an estimated
+    /// API call count + rate-limit window preview instead of the request
+    /// body alone.
+    #[arg(long, global = true)]
+    pub cost: bool,
+
+    /// Emit paginated results as NDJSON (one frame per line) instead of
+    /// the default aggregated JSON. Streams items as they arrive.
+    /// Mutually exclusive with `--format`.
+    #[arg(long, global = true, conflicts_with = "format")]
+    pub stream: bool,
+
+    /// Output format.
+    #[arg(long, global = true, value_enum)]
+    pub format: Option<OutputFormat>,
 
     #[command(subcommand)]
     pub cmd: Command,
@@ -100,18 +134,51 @@ impl Cli {
     pub fn output_options(&self) -> OutputOptions {
         OutputOptions { raw: self.raw, pretty: self.pretty }
     }
+
+    /// Returns true if `--check-request` or `--dry-run` was passed.
+    #[must_use]
+    pub fn is_dry_run(&self) -> bool {
+        self.check_request || self.dry_run
+    }
+
+    /// Returns true if streaming NDJSON output is requested via
+    /// `--stream` or `--format jsonl`.
+    #[must_use]
+    pub fn is_stream(&self) -> bool {
+        self.stream || matches!(self.format, Some(OutputFormat::Jsonl))
+    }
+
+    /// Returns true if `--check-request --cost` (or `--dry-run --cost`)
+    /// was passed — caller should emit a [`CostEstimate`] instead of
+    /// (or alongside) the request body.
+    ///
+    /// [`CostEstimate`]: crate::observability::cost::CostEstimate
+    #[must_use]
+    pub fn is_cost_preview(&self) -> bool {
+        self.is_dry_run() && self.cost
+    }
 }
 
 /// Build a client from the resolved token, unless `--check-request`
 /// is set (in which case no client is needed).
+///
+/// Token resolution order:
+/// 1. `--token` flag / `NOTION_TOKEN` env (via clap)
+/// 2. [`TokenChain`]: env → file → keychain → exec
 pub fn build_client(cli: &Cli) -> Result<NotionClient, CliError> {
-    let token_str = cli.token.as_deref().ok_or_else(|| {
-        CliError::Config(
-            "missing NOTION_TOKEN (set env var or pass --token)".to_string(),
-        )
-    })?;
-    NotionClient::new(&NotionToken::new(token_str))
-        .map_err(|e| CliError::Config(format!("client init: {e}")))
+    let token = if let Some(t) = cli.token.as_deref() {
+        NotionToken::new(t)
+    } else {
+        let chain = TokenChain::default_chain();
+        chain.resolve().ok_or_else(|| {
+            CliError::Config(
+                "no Notion token found (tried env NOTION_TOKEN, file, keychain, exec). \
+                 Set NOTION_TOKEN or pass --token."
+                    .to_string(),
+            )
+        })?
+    };
+    NotionClient::new(&token).map_err(|e| CliError::Config(format!("client init: {e}")))
 }
 
 /// Dispatch a parsed [`Cli`] to the right subcommand handler.

@@ -10,7 +10,7 @@ use crate::api::comment::{
     CommentParent, CreateCommentRequest, ListCommentsOptions,
 };
 use crate::cli::{build_client, Cli, CliError};
-use crate::output::emit;
+use crate::output::{emit, emit_stream_end, emit_stream_error, emit_stream_item};
 use crate::types::comment::Comment;
 use crate::types::rich_text::RichText;
 use crate::validation::{BlockId, PageId};
@@ -96,7 +96,7 @@ async fn run_list(
             ));
         }
     };
-    if cli.check_request {
+    if cli.is_dry_run() {
         emit(
             &cli.output_options(),
             &serde_json::json!({
@@ -108,16 +108,37 @@ async fn run_list(
         return Ok(());
     }
     let client = build_client(cli)?;
+    let streaming = cli.is_stream();
     let mut opts = ListCommentsOptions {
         block_id: block_id.clone(),
         page_size,
         start_cursor: cursor.clone(),
     };
     let mut collected: Vec<Comment> = Vec::new();
+    let mut last_cursor: Option<String> = None;
     loop {
-        let resp = client.list_comments(&opts).await?;
+        let resp = match client.list_comments(&opts).await {
+            Ok(r) => r,
+            Err(e) => {
+                if streaming {
+                    emit_stream_error(
+                        last_cursor.as_deref(),
+                        "api_error",
+                        &e.to_string(),
+                    )?;
+                    return Err(CliError::Api(e));
+                }
+                return Err(CliError::Api(e));
+            }
+        };
+        last_cursor.clone_from(&resp.next_cursor);
+        let exhausted = cursor.is_some() || !resp.has_more || resp.next_cursor.is_none();
         for c in resp.results {
-            collected.push(c);
+            if streaming {
+                emit_stream_item(&serde_json::to_value(&c)?)?;
+            } else {
+                collected.push(c);
+            }
             if let Some(cap) = limit {
                 if collected.len() >= cap {
                     break;
@@ -129,10 +150,14 @@ async fn run_list(
                 break;
             }
         }
-        if cursor.is_some() || !resp.has_more || resp.next_cursor.is_none() {
+        if exhausted {
             break;
         }
         opts.start_cursor = resp.next_cursor;
+    }
+    if streaming {
+        emit_stream_end(None)?;
+        return Ok(());
     }
     let out = serde_json::json!({
         "results": collected,
@@ -167,7 +192,7 @@ async fn run_create(
         discussion_id,
         rich_text: RichText::plain(text),
     };
-    if cli.check_request {
+    if cli.is_dry_run() {
         emit(
             &cli.output_options(),
             &serde_json::json!({

@@ -21,9 +21,9 @@ fn record_appends_jsonl_entries() {
     let path = tmp_path("append");
     let log = AuditLog::new(Some(path.clone()));
 
-    log.record("create_page", Some("abc123"), Ok(()));
-    log.record("update_page", Some("xyz789"), Err("validation failed"));
-    log.record("create_data_source", None, Ok(()));
+    log.record("create_page", Some("abc123"), Ok(()), None);
+    log.record("update_page", Some("xyz789"), Err("validation failed"), None);
+    log.record("create_data_source", None, Ok(()), None);
 
     let contents = fs::read_to_string(&path).expect("audit file exists");
     let lines: Vec<&str> = contents.lines().collect();
@@ -60,9 +60,9 @@ fn record_admin_writes_to_admin_sink_only() {
     let admin_path = tmp_path("split-admin");
     let log = AuditLog::new_with_admin(Some(write_path.clone()), Some(admin_path.clone()));
 
-    log.record("update_page", Some("pg-1"), Ok(()));
-    log.record_admin("db_create", Some("pg-2"), Ok(()));
-    log.record_admin("ds_update:remove_property", Some("ds-1"), Err("nope"));
+    log.record("update_page", Some("pg-1"), Ok(()), None);
+    log.record_admin("db_create", Some("pg-2"), Ok(()), None);
+    log.record_admin("ds_update:remove_property", Some("ds-1"), Err("nope"), None);
 
     let write_contents = fs::read_to_string(&write_path).expect("write audit file");
     let admin_contents = fs::read_to_string(&admin_path).expect("admin audit file");
@@ -96,7 +96,7 @@ fn record_admin_without_admin_path_is_a_noop() {
     let write_path = tmp_path("admin-noop");
     // write sink set; admin sink unset
     let log = AuditLog::new_with_admin(Some(write_path.clone()), None);
-    log.record_admin("db_create", Some("pg"), Ok(()));
+    log.record_admin("db_create", Some("pg"), Ok(()), None);
     // write path must remain empty (record_admin goes to admin sink only)
     let write_contents = fs::read_to_string(&write_path).unwrap_or_default();
     assert!(
@@ -112,7 +112,7 @@ fn record_falls_through_to_write_sink_even_with_admin_path_set() {
     let write_path = tmp_path("write-isolation-w");
     let admin_path = tmp_path("write-isolation-a");
     let log = AuditLog::new_with_admin(Some(write_path.clone()), Some(admin_path.clone()));
-    log.record("update_page", Some("pg"), Ok(()));
+    log.record("update_page", Some("pg"), Ok(()), None);
     let admin_contents = fs::read_to_string(&admin_path).unwrap_or_default();
     assert!(
         admin_contents.is_empty(),
@@ -128,7 +128,7 @@ fn record_falls_through_to_write_sink_even_with_admin_path_set() {
 fn record_with_no_path_is_a_noop() {
     // AuditLog::default() has no path set — must not panic or error.
     let log = AuditLog::default();
-    log.record("create_page", Some("abc"), Ok(()));
+    log.record("create_page", Some("abc"), Ok(()), None);
     // nothing to assert beyond "did not panic"
 }
 
@@ -144,7 +144,7 @@ fn concurrent_records_serialise_cleanly() {
         .map(|i| {
             let log = log.clone();
             thread::spawn(move || {
-                log.record("create_page", Some(&format!("id-{i}")), Ok(()));
+                log.record("create_page", Some(&format!("id-{i}")), Ok(()), None);
             })
         })
         .collect();

@@ -11,14 +11,15 @@ use crate::api::data_source::{
     RelationDirection, SelectKind, UpdateDataSourceRequest,
 };
 use crate::api::database::{
-    CreateDatabaseParent, CreateDatabaseRequest, InitialDataSource,
+    CreateDatabaseParent, CreateDatabaseRequest, DatabaseParentUpdate, InitialDataSource,
+    UpdateDatabaseRequest,
 };
 use crate::api::page::{CreatePageRequest, MoveTarget, PageParent, UpdatePageRequest};
 use crate::api::search::SearchRequest;
 use crate::api::{ApiError, NotionClient};
 use crate::mcp::params::{
     AppendBlockChildrenParams, CreateDataSourceParams, CreatePageParams, DbCreateParams,
-    DeleteBlockParams, DsAddRelationParams, DsUpdateParams, GetBlockParams,
+    DbUpdateParams, DeleteBlockParams, DsAddRelationParams, DsUpdateParams, GetBlockParams,
     GetDataSourceParams, GetPageParams, ListBlockChildrenParams, PageMoveParams,
     QueryDataSourceParams, SearchParams, UpdateBlockParams, UpdatePageParams,
 };
@@ -457,6 +458,81 @@ pub async fn db_create(
     req.validate_local()
         .map_err(|e| ErrorData::invalid_params(e, None))?;
     let db = client.create_database(&req).await.map_err(|e| api_to_rpc(&e))?;
+    Ok(wrap_untrusted(&serde_json::to_value(db).map_err(|e| {
+        ErrorData::internal_error(format!("serialize: {e}"), None)
+    })?))
+}
+
+pub async fn users_me(client: &NotionClient) -> Result<serde_json::Value, ErrorData> {
+    let me = client.retrieve_me().await.map_err(|e| api_to_rpc(&e))?;
+    Ok(wrap_untrusted(&serde_json::to_value(me).map_err(|e| {
+        ErrorData::internal_error(format!("serialize: {e}"), None)
+    })?))
+}
+
+pub async fn db_update(
+    client: &NotionClient,
+    p: DbUpdateParams,
+) -> Result<serde_json::Value, ErrorData> {
+    // Reject mutually exclusive parent targets
+    if p.to_page_id.is_some() && p.to_workspace.is_some() {
+        return Err(ErrorData::invalid_params(
+            "to_page_id and to_workspace are mutually exclusive".to_string(),
+            None,
+        ));
+    }
+    let db_id = validate(DatabaseId::from_url_or_id(&p.database_id), "database_id")?;
+    let mut req = UpdateDatabaseRequest::default();
+    if let Some(pid) = &p.to_page_id {
+        let parent = validate(PageId::from_url_or_id(pid), "to_page_id")?;
+        req.parent = Some(DatabaseParentUpdate::page(parent));
+    } else if p.to_workspace.unwrap_or(false) {
+        req.parent = Some(DatabaseParentUpdate::workspace());
+    }
+    if let Some(t) = &p.title {
+        req.title = Some(RichText::plain(t));
+    }
+    if let Some(d) = &p.description {
+        req.description = Some(RichText::plain(d));
+    }
+    // Icon/cover are tristate: Some(Null) clears, Some(value) sets, None leaves alone
+    if let Some(icon_v) = &p.icon {
+        if icon_v.is_null() {
+            req.icon = Some(None);
+        } else if let Some(s) = icon_v.as_str() {
+            req.icon = Some(Some(Icon::parse_cli(s)));
+        } else {
+            return Err(ErrorData::invalid_params(
+                "icon: expected string or null".to_string(),
+                None,
+            ));
+        }
+    }
+    if let Some(cover_v) = &p.cover {
+        if cover_v.is_null() {
+            req.cover = Some(None);
+        } else if let Some(s) = cover_v.as_str() {
+            req.cover = Some(Some(Cover::external(s)));
+        } else {
+            return Err(ErrorData::invalid_params(
+                "cover: expected string URL or null".to_string(),
+                None,
+            ));
+        }
+    }
+    req.is_inline = p.is_inline;
+    req.is_locked = p.is_locked;
+    req.in_trash = p.in_trash;
+    if req.is_empty() {
+        return Err(ErrorData::invalid_params(
+            "at least one field must be set for db_update".to_string(),
+            None,
+        ));
+    }
+    let db = client
+        .update_database(&db_id, &req)
+        .await
+        .map_err(|e| api_to_rpc(&e))?;
     Ok(wrap_untrusted(&serde_json::to_value(db).map_err(|e| {
         ErrorData::internal_error(format!("serialize: {e}"), None)
     })?))

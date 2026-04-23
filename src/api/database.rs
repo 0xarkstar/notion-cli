@@ -93,6 +93,79 @@ impl CreateDatabaseRequest {
 
 // === API surface ==========================================================
 
+/// Parent target for `PATCH /v1/databases/{id}` parent mutation.
+///
+/// Unlike [`CreateDatabaseParent`] (which only supports pages as of
+/// v0.3), the update endpoint accepts both pages and workspace-root.
+/// Workspace moves typically require OAuth user tokens — integration
+/// tokens usually receive 403. The error-hint registry maps that.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum DatabaseParentUpdate {
+    #[serde(rename = "page_id")]
+    Page { page_id: PageId },
+    #[serde(rename = "workspace")]
+    Workspace { workspace: bool },
+}
+
+impl DatabaseParentUpdate {
+    #[must_use]
+    pub fn page(id: PageId) -> Self {
+        Self::Page { page_id: id }
+    }
+
+    #[must_use]
+    pub fn workspace() -> Self {
+        Self::Workspace { workspace: true }
+    }
+}
+
+/// Request body for `PATCH /v1/databases/{id}`.
+///
+/// All fields are optional — the endpoint semantics are "set what is
+/// present; leave everything else alone." `icon` and `cover` are
+/// tristate via `Option<Option<_>>`, same convention as
+/// [`crate::api::page::UpdatePageRequest`]:
+/// - `None` → field absent → leave unchanged
+/// - `Some(None)` → JSON `null` → clear
+/// - `Some(Some(v))` → set
+#[derive(Debug, Clone, Serialize, Deserialize, Default, JsonSchema)]
+#[allow(clippy::option_option)] // tristate is intentional
+pub struct UpdateDatabaseRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent: Option<DatabaseParentUpdate>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<Vec<RichText>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<Vec<RichText>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_inline: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<Option<Icon>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cover: Option<Option<Cover>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub in_trash: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_locked: Option<bool>,
+}
+
+impl UpdateDatabaseRequest {
+    /// True when the caller supplied no mutation fields. Prevents
+    /// empty PATCH bodies that would hit Notion for no reason.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.parent.is_none()
+            && self.title.is_none()
+            && self.description.is_none()
+            && self.is_inline.is_none()
+            && self.icon.is_none()
+            && self.cover.is_none()
+            && self.in_trash.is_none()
+            && self.is_locked.is_none()
+    }
+}
+
 impl NotionClient {
     /// `GET /v1/databases/{id}`.
     ///
@@ -112,5 +185,20 @@ impl NotionClient {
         req: &CreateDatabaseRequest,
     ) -> Result<Database, ApiError> {
         self.post("/databases", req).await
+    }
+
+    /// `PATCH /v1/databases/{id}` — mutate container metadata or parent.
+    ///
+    /// Accepts parent mutation (page→page, page↔workspace) unlike
+    /// `PATCH /v1/pages/{id}` which rejects parent changes (pages use
+    /// the dedicated `/move` endpoint). Workspace-parent targets
+    /// typically 403 on integration tokens — caller should map that
+    /// to a targeted hint.
+    pub async fn update_database(
+        &self,
+        id: &DatabaseId,
+        req: &UpdateDatabaseRequest,
+    ) -> Result<Database, ApiError> {
+        self.patch(&format!("/databases/{id}"), req).await
     }
 }

@@ -11,8 +11,8 @@ use notion_cli::api::{ClientConfig, NotionClient};
 use notion_cli::config::NotionToken;
 use notion_cli::mcp::handlers;
 use notion_cli::mcp::params::{
-    AppendBlockChildrenParams, CreateDataSourceParams, CreatePageParams, DeleteBlockParams,
-    GetBlockParams, GetDataSourceParams, GetPageParams, ListBlockChildrenParams,
+    AppendBlockChildrenParams, CreateDataSourceParams, CreatePageParams, DbUpdateParams,
+    DeleteBlockParams, GetBlockParams, GetDataSourceParams, GetPageParams, ListBlockChildrenParams,
     QueryDataSourceParams, SearchParams, UpdateBlockParams, UpdatePageParams,
 };
 use serde_json::json;
@@ -32,7 +32,7 @@ fn client(server: &MockServer) -> NotionClient {
             connect_timeout: Duration::from_secs(5),
             total_timeout: Duration::from_secs(10),
             max_response_bytes: 10 * 1024 * 1024,
-            rate_limit_per_sec: NonZeroU32::new(100).unwrap(),
+            rate_limit_per_sec: NonZeroU32::new(100).unwrap(), cache_ttl: None,
         },
     )
     .unwrap()
@@ -218,6 +218,7 @@ async fn handler_create_page_data_source_parent() {
             children: None,
             icon: None,
             cover: None,
+            idempotency_key: None,
         },
     )
     .await
@@ -243,6 +244,7 @@ async fn handler_create_page_page_parent() {
             children: None,
             icon: None,
             cover: None,
+            idempotency_key: None,
         },
     )
     .await
@@ -263,6 +265,7 @@ async fn handler_create_page_rejects_both_parents() {
             children: None,
             icon: None,
             cover: None,
+            idempotency_key: None,
         },
     )
     .await
@@ -283,6 +286,7 @@ async fn handler_create_page_rejects_no_parent() {
             children: None,
             icon: None,
             cover: None,
+            idempotency_key: None,
         },
     )
     .await
@@ -308,6 +312,7 @@ async fn handler_update_page() {
             in_trash: Some(true),
             icon: None,
             cover: None,
+            idempotency_key: None,
         },
     )
     .await
@@ -330,6 +335,7 @@ async fn handler_create_data_source_the_bug_endpoint() {
             parent_database_id: DB_ID.into(),
             title: Some("new-ds".into()),
             properties: json!({"Name": {"title": {}}}),
+            idempotency_key: None,
         },
     )
     .await
@@ -351,6 +357,7 @@ async fn handler_create_data_source_rejects_bad_parent() {
             parent_database_id: "not-an-id".into(),
             title: None,
             properties: json!({}),
+            idempotency_key: None,
         },
     )
     .await
@@ -459,6 +466,7 @@ async fn handler_append_block_children() {
                 {"type":"paragraph","paragraph":{"rich_text":[],"color":"default"}}
             ]),
             after: None,
+            idempotency_key: None,
         },
     )
     .await
@@ -476,6 +484,7 @@ async fn handler_append_block_children_rejects_malformed_children() {
             block_id: BLOCK_ID.into(),
             children: json!({"not": "an array"}),
             after: None,
+            idempotency_key: None,
         },
     )
     .await
@@ -501,6 +510,7 @@ async fn handler_update_block_archive() {
             body: None,
             archived: Some(true),
             in_trash: None,
+            idempotency_key: None,
         },
     )
     .await
@@ -521,7 +531,7 @@ async fn handler_delete_block() {
     let c = client(&server);
     let out = notion_cli::mcp::handlers::delete_block(
         &c,
-        DeleteBlockParams { block_id: BLOCK_ID.into() },
+        DeleteBlockParams { block_id: BLOCK_ID.into(), idempotency_key: None },
     )
     .await
     .unwrap();
@@ -568,4 +578,129 @@ async fn handler_maps_api_500_to_internal_error() {
     .await
     .unwrap_err();
     assert!(err.message.contains("500") || err.message.to_ascii_lowercase().contains("server"));
+}
+
+// === v0.4 handlers ========================================================
+
+#[tokio::test]
+async fn db_update_handler_validates_parent_mutex() {
+    let server = MockServer::start().await;
+    let c = client(&server);
+    let err = handlers::db_update(
+        &c,
+        DbUpdateParams {
+            database_id: DB_ID.into(),
+            to_page_id: Some(PAGE_ID.into()),
+            to_workspace: Some(true),
+            title: None,
+            description: None,
+            icon: None,
+            cover: None,
+            is_inline: None,
+            is_locked: None,
+            in_trash: None,
+            idempotency_key: None,
+        },
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        err.message.contains("mutually exclusive"),
+        "expected mutex error, got: {err:?}",
+    );
+}
+
+#[tokio::test]
+async fn db_update_handler_rejects_empty_req() {
+    let server = MockServer::start().await;
+    let c = client(&server);
+    let err = handlers::db_update(
+        &c,
+        DbUpdateParams {
+            database_id: DB_ID.into(),
+            to_page_id: None,
+            to_workspace: None,
+            title: None,
+            description: None,
+            icon: None,
+            cover: None,
+            is_inline: None,
+            is_locked: None,
+            in_trash: None,
+            idempotency_key: None,
+        },
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        err.message.contains("at least one field"),
+        "expected empty-request error, got: {err:?}",
+    );
+}
+
+#[tokio::test]
+async fn db_update_handler_icon_tristate_null_clears() {
+    let server = MockServer::start().await;
+    Mock::given(method("PATCH"))
+        .and(path(format!("/v1/databases/{DB_ID}")))
+        .and(wiremock::matchers::body_json(serde_json::json!({"icon": null})))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "object": "database",
+            "id": DB_ID,
+            "created_time": "2026-04-22T10:00:00.000Z",
+            "last_edited_time": "2026-04-22T10:00:00.000Z",
+            "title": [],
+            "description": [],
+            "archived": false,
+            "in_trash": false,
+            "properties": {},
+            "data_sources": []
+        })))
+        .mount(&server)
+        .await;
+    let c = client(&server);
+    let out = handlers::db_update(
+        &c,
+        DbUpdateParams {
+            database_id: DB_ID.into(),
+            to_page_id: None,
+            to_workspace: None,
+            title: None,
+            description: None,
+            icon: Some(serde_json::Value::Null), // tristate clear
+            cover: None,
+            is_inline: None,
+            is_locked: None,
+            in_trash: None,
+            idempotency_key: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert_envelope(&out);
+}
+
+#[tokio::test]
+async fn users_me_handler_happy_path() {
+    let bot_hex = "aaaabbbbccccddddaaaabbbbccccdddd";
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/users/me"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "object": "user",
+            "id": bot_hex,
+            "type": "bot",
+            "bot": {"owner": {"type": "workspace", "workspace": true}, "workspace_name": "Test"},
+            "name": "My Bot",
+            "avatar_url": null
+        })))
+        .mount(&server)
+        .await;
+    let c = client(&server);
+    let out = handlers::users_me(&c).await.unwrap();
+    assert_envelope(&out);
+    assert_eq!(
+        out.pointer("/content/id").and_then(|v| v.as_str()),
+        Some(bot_hex),
+    );
 }

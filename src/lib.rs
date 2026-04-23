@@ -9,10 +9,13 @@
 //! - [`error`] — crate error hierarchy.
 
 pub mod api;
+pub mod cache;
 pub mod cli;
 pub mod config;
 pub mod error;
 pub mod mcp;
+pub mod observability;
 pub mod output;
+pub mod token_provider;
 pub mod types;
 pub mod validation;

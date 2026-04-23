@@ -1,4 +1,4 @@
-//! Admin MCP tier — 12 write tools + admin lifecycle ops.
+//! Admin MCP tier — 12 write tools + 5 admin = 17 tools (+ `users_me` = 18 total).
 //!
 //! # Opt-in via `--allow-admin`
 //!
@@ -45,9 +45,9 @@ use crate::mcp::common::{to_result, Inner};
 use crate::mcp::handlers;
 use crate::mcp::params::{
     AppendBlockChildrenParams, CreateDataSourceParams, CreatePageParams, DbCreateParams,
-    DeleteBlockParams, DsAddRelationParams, DsUpdateParams, GetBlockParams,
+    DbUpdateParams, DeleteBlockParams, DsAddRelationParams, DsUpdateParams, GetBlockParams,
     GetDataSourceParams, GetPageParams, ListBlockChildrenParams, PageMoveParams,
-    QueryDataSourceParams, SearchParams, UpdateBlockParams, UpdatePageParams,
+    QueryDataSourceParams, SearchParams, UpdateBlockParams, UpdatePageParams, UsersMeParams,
 };
 
 #[derive(Clone)]
@@ -124,6 +124,18 @@ impl NotionAdmin {
         ))
     }
 
+    #[doc = include_str!("../../docs/cookbook/snippets/users_me.md")]
+    #[tool(
+        name = "users_me",
+        description = "Retrieve the bot user tied to the current integration token. Returns only the caller's own identity — does NOT enumerate workspace users."
+    )]
+    async fn users_me(
+        &self,
+        _params: Parameters<UsersMeParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        Ok(to_result(&handlers::users_me(&self.inner.client).await?))
+    }
+
     // --- writes (same as Write tier) --------------------------------
 
     #[tool(
@@ -134,6 +146,7 @@ impl NotionAdmin {
         &self,
         params: Parameters<CreatePageParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        let request_id = crate::observability::RequestId::new();
         let target = params
             .0
             .parent_data_source_id
@@ -144,6 +157,7 @@ impl NotionAdmin {
             "create_page",
             target.as_deref(),
             result.as_ref().map(|_| ()).map_err(|e| e.message.as_ref()),
+            Some(request_id.as_str()),
         );
         Ok(to_result(&result?))
     }
@@ -156,12 +170,14 @@ impl NotionAdmin {
         &self,
         params: Parameters<UpdatePageParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        let request_id = crate::observability::RequestId::new();
         let target = params.0.page_id.clone();
         let result = handlers::update_page(&self.inner.client, params.0).await;
         self.inner.audit.record(
             "update_page",
             Some(&target),
             result.as_ref().map(|_| ()).map_err(|e| e.message.as_ref()),
+            Some(request_id.as_str()),
         );
         Ok(to_result(&result?))
     }
@@ -174,12 +190,14 @@ impl NotionAdmin {
         &self,
         params: Parameters<CreateDataSourceParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        let request_id = crate::observability::RequestId::new();
         let target = params.0.parent_database_id.clone();
         let result = handlers::create_data_source(&self.inner.client, params.0).await;
         self.inner.audit.record(
             "create_data_source",
             Some(&target),
             result.as_ref().map(|_| ()).map_err(|e| e.message.as_ref()),
+            Some(request_id.as_str()),
         );
         Ok(to_result(&result?))
     }
@@ -192,12 +210,14 @@ impl NotionAdmin {
         &self,
         params: Parameters<AppendBlockChildrenParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        let request_id = crate::observability::RequestId::new();
         let target = params.0.block_id.clone();
         let result = handlers::append_block_children(&self.inner.client, params.0).await;
         self.inner.audit.record(
             "append_block_children",
             Some(&target),
             result.as_ref().map(|_| ()).map_err(|e| e.message.as_ref()),
+            Some(request_id.as_str()),
         );
         Ok(to_result(&result?))
     }
@@ -210,12 +230,14 @@ impl NotionAdmin {
         &self,
         params: Parameters<UpdateBlockParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        let request_id = crate::observability::RequestId::new();
         let target = params.0.block_id.clone();
         let result = handlers::update_block(&self.inner.client, params.0).await;
         self.inner.audit.record(
             "update_block",
             Some(&target),
             result.as_ref().map(|_| ()).map_err(|e| e.message.as_ref()),
+            Some(request_id.as_str()),
         );
         Ok(to_result(&result?))
     }
@@ -228,12 +250,14 @@ impl NotionAdmin {
         &self,
         params: Parameters<DeleteBlockParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        let request_id = crate::observability::RequestId::new();
         let target = params.0.block_id.clone();
         let result = handlers::delete_block(&self.inner.client, params.0).await;
         self.inner.audit.record(
             "delete_block",
             Some(&target),
             result.as_ref().map(|_| ()).map_err(|e| e.message.as_ref()),
+            Some(request_id.as_str()),
         );
         Ok(to_result(&result?))
     }
@@ -248,6 +272,7 @@ impl NotionAdmin {
     // DO NOT add users/comments here — those are CLI-only in v0.3
     // (D9/D10). Move to v0.4 if real agent demand emerges.
 
+    #[doc = include_str!("../../docs/cookbook/snippets/db_create.md")]
     #[tool(
         name = "db_create",
         description = "Create a new database container under a parent page with an initial data-source schema. Admin operation — audited to NOTION_CLI_ADMIN_LOG. `properties` must include at least one `title`-typed entry."
@@ -256,16 +281,19 @@ impl NotionAdmin {
         &self,
         params: Parameters<DbCreateParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        let request_id = crate::observability::RequestId::new();
         let target = params.0.parent_page_id.clone();
         let result = handlers::db_create(&self.inner.client, params.0).await;
         self.inner.audit.record_admin(
             "db_create",
             Some(&target),
             result.as_ref().map(|_| ()).map_err(|e| e.message.as_ref()),
+            Some(request_id.as_str()),
         );
         Ok(to_result(&result?))
     }
 
+    #[doc = include_str!("../../docs/cookbook/snippets/ds_update.md")]
     #[tool(
         name = "ds_update",
         description = "Mutate a data source's schema. `action` dispatches: add_property, remove_property (destructive — requires confirm=true AND NOTION_CLI_ADMIN_CONFIRMED=1 env), rename_property, add_option, bulk (non-atomic escape). Single-delta default per invocation. Admin operation — audited to NOTION_CLI_ADMIN_LOG."
@@ -274,6 +302,7 @@ impl NotionAdmin {
         &self,
         params: Parameters<DsUpdateParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        let request_id = crate::observability::RequestId::new();
         let target = params.0.data_source_id.clone();
         let action = params.0.action.clone();
         let result = handlers::ds_update(&self.inner.client, params.0).await;
@@ -281,10 +310,12 @@ impl NotionAdmin {
             &format!("ds_update:{action}"),
             Some(&target),
             result.as_ref().map(|_| ()).map_err(|e| e.message.as_ref()),
+            Some(request_id.as_str()),
         );
         Ok(to_result(&result?))
     }
 
+    #[doc = include_str!("../../docs/cookbook/snippets/ds_add_relation.md")]
     #[tool(
         name = "ds_add_relation",
         description = "Add a relation property to a data source. Convenience wrapper over ds_update — generates correct dual_property/single_property shape with data_source_id (not database_id). Exactly one of `backlink` (two-way with named reciprocal property), `one_way` (no backlink), or `self` (self-referential, same DS as source) required. Pre-flight: GET on target verifies existence + integration sharing. Admin operation — audited to NOTION_CLI_ADMIN_LOG."
@@ -293,16 +324,19 @@ impl NotionAdmin {
         &self,
         params: Parameters<DsAddRelationParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        let request_id = crate::observability::RequestId::new();
         let target = params.0.source_data_source_id.clone();
         let result = handlers::ds_add_relation(&self.inner.client, params.0).await;
         self.inner.audit.record_admin(
             "ds_add_relation",
             Some(&target),
             result.as_ref().map(|_| ()).map_err(|e| e.message.as_ref()),
+            Some(request_id.as_str()),
         );
         Ok(to_result(&result?))
     }
 
+    #[doc = include_str!("../../docs/cookbook/snippets/page_move.md")]
     #[tool(
         name = "page_move",
         description = "Relocate a page to a new parent. Uses POST /v1/pages/{id}/move — the dedicated endpoint introduced 2026-01-15. PATCH does not accept parent mutation. Exactly one of target_page_id or target_data_source_id required. Restrictions: source must be a regular page (not database), integration needs edit access to new parent, cross-workspace rejected. Admin operation — audited to NOTION_CLI_ADMIN_LOG."
@@ -311,12 +345,35 @@ impl NotionAdmin {
         &self,
         params: Parameters<PageMoveParams>,
     ) -> Result<CallToolResult, ErrorData> {
+        let request_id = crate::observability::RequestId::new();
         let target = params.0.page_id.clone();
         let result = handlers::page_move(&self.inner.client, params.0).await;
         self.inner.audit.record_admin(
             "page_move",
             Some(&target),
             result.as_ref().map(|_| ()).map_err(|e| e.message.as_ref()),
+            Some(request_id.as_str()),
+        );
+        Ok(to_result(&result?))
+    }
+
+    #[doc = include_str!("../../docs/cookbook/snippets/db_update.md")]
+    #[tool(
+        name = "db_update",
+        description = "Update a database container: title, description, icon, cover, is_inline, is_locked, in_trash, or reparent (to_page_id / to_workspace). Uses PATCH /v1/databases/{id} — which accepts parent mutation (unlike PATCH /v1/pages which requires the separate /move endpoint). to_page_id and to_workspace are mutually exclusive. to_workspace typically returns 403 on integration tokens — use OAuth user token for workspace-level moves. Admin operation — audited to NOTION_CLI_ADMIN_LOG."
+    )]
+    async fn db_update(
+        &self,
+        params: Parameters<DbUpdateParams>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let request_id = crate::observability::RequestId::new();
+        let target = params.0.database_id.clone();
+        let result = handlers::db_update(&self.inner.client, params.0).await;
+        self.inner.audit.record_admin(
+            "db_update",
+            Some(&target),
+            result.as_ref().map(|_| ()).map_err(|e| e.message.as_ref()),
+            Some(request_id.as_str()),
         );
         Ok(to_result(&result?))
     }

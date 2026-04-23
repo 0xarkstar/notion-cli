@@ -1,7 +1,8 @@
 ---
 name: notion-cli-mcp
-description: Notion via notion-cli — a Rust CLI + MCP server for Notion API 2025-09-03+. Three-tier agent integration (read-only default, opt-in runtime writes, opt-in admin lifecycle) with rate limiting, response-size cap, untrusted-source output envelope, per-tier JSONL audit logs, and --check-request dry-runs. Supports the new data-source model, 22 property types, 12 block types, admin schema mutation, relation wiring, and dedicated page-move endpoint.
+description: "Notion via notion-cli — a Rust CLI + MCP server for Notion API 2025-09-03+. Three-tier agent integration (read-only default, opt-in runtime writes, opt-in admin lifecycle) with rate limiting, response-size cap, untrusted-source output envelope, per-tier JSONL audit logs, and --check-request dry-runs. Supports the new data-source model, 22 property types, 12 block types, admin schema mutation, relation wiring, dedicated page-move endpoint, db update, and users me (v0.4)."
 homepage: https://github.com/0xarkstar/notion-cli
+version: 2.1.0
 metadata:
   openclaw:
     emoji: 📝
@@ -26,9 +27,9 @@ Agent-first Notion access via the `notion-cli` binary (Rust, MIT). A single tool
 
 | Flag | Tier | Tool count | Intended audience |
 |------|------|-----------|-------------------|
-| (none) | **Read-only** (default) | 6 | General agents — page reads, queries, search |
-| `--allow-write` | **Runtime writes** | 12 | Agents that mutate existing content (pages, blocks, data-source contents) |
-| `--allow-admin` | **Admin lifecycle** | 16 | Operator-facing — schema mutation, relation wiring, page relocation |
+| (none) | **Read-only** (default) | 7 | General agents — page reads, queries, search, identity check |
+| `--allow-write` | **Runtime writes** | 13 | Agents that mutate existing content (pages, blocks, data-source contents) |
+| `--allow-admin` | **Admin lifecycle** | 18 | Operator-facing — schema mutation, relation wiring, page relocation, db update |
 
 **`--allow-admin` is tool-exposure policy, not a security sandbox.** An agent running in an environment with an admin-scoped Notion integration token plus arbitrary code execution can hit the REST API directly regardless of MCP gating. What the flag actually provides:
 
@@ -83,7 +84,7 @@ notion-cli block get <block-id>
 notion-cli block list <page-or-block-id> --page-size 50
 ```
 
-MCP-exposed tools: `get_page`, `get_data_source`, `query_data_source`, `search`, `get_block`, `list_block_children`.
+MCP-exposed tools: `get_page`, `get_data_source`, `query_data_source`, `search`, `get_block`, `list_block_children`, `users_me`.
 
 ## Tier 2 — Runtime writes (12 tools, requires `--allow-write`)
 
@@ -121,7 +122,7 @@ notion-cli ds create \
   --properties '{"Name":{"title":{}},"Done":{"checkbox":{}}}'
 ```
 
-MCP-exposed tools (12): the 6 read tools above plus `create_page`, `update_page`, `create_data_source`, `append_block_children`, `update_block`, `delete_block`.
+MCP-exposed tools (13): the 7 read tools above plus `create_page`, `update_page`, `create_data_source`, `append_block_children`, `update_block`, `delete_block`.
 
 ## Introspection
 
@@ -190,7 +191,11 @@ The commands in this section are **not exposed over MCP by default**. They requi
 
 This separation follows the least-privilege default for agent tool menus ([Three-tier privilege model](#three-tier-privilege-model)).
 
-## Admin lifecycle operations (4 MCP tools behind `--allow-admin`)
+See [docs/runtime-samples/](../docs/runtime-samples/) for agent-runtime config samples (sample, not canonical).
+
+See [docs/cookbook/](../docs/cookbook/) for end-to-end workflows.
+
+## Admin lifecycle operations (5 MCP tools behind `--allow-admin`, v0.4+)
 
 These cover database-container creation, schema mutation, relation wiring, and page relocation — the operations that seed a new workspace but that an ongoing agent loop should not need.
 
@@ -259,6 +264,37 @@ notion-cli page move <page-id> --to-data-source <data-source-id>
 
 Restrictions: source must be a regular page (not a database), the integration needs edit access on the new parent, cross-workspace moves are server-rejected.
 
+### `db update` — mutate database container metadata or reparent (v0.4)
+
+```bash
+# Rename the database container
+notion-cli db update <database-id> --title "Tasks v2"
+
+# Move database to a new parent page
+notion-cli db update <database-id> --to-page <new-parent-page-id>
+
+# Clear the icon (tristate clear)
+notion-cli db update <database-id> --icon-clear
+
+# Set icon and lock
+notion-cli db update <database-id> --icon 📋 --is-locked true
+```
+
+Uses `PATCH /v1/databases/{id}` — which accepts parent mutation (unlike
+`PATCH /v1/pages/{id}` which requires the `/move` endpoint). Admin op
+— audited to `NOTION_CLI_ADMIN_LOG`.
+
+### `users me` — caller identity (v0.4)
+
+```bash
+notion-cli users me
+# alias:
+notion-cli users whoami
+```
+
+Returns the bot user tied to the current integration token. Does NOT
+enumerate workspace users — safe to expose over MCP (all tiers).
+
 ### Admin audit log (`NOTION_CLI_ADMIN_LOG`)
 
 Admin tool invocations append to a **separate** JSONL sink from write ops. Each entry carries a `"privilege": "admin"` field:
@@ -319,39 +355,11 @@ NOTION_CLI_ADMIN_CONFIRMED=1 notion-cli mcp --allow-admin \
   --admin-log /var/log/notion-admin.jsonl
 ```
 
-Example Hermes profile configs (tier by profile intent):
+See [docs/runtime-samples/hermes-profile.sample.yaml](../docs/runtime-samples/hermes-profile.sample.yaml) for a full Hermes profile example with read-only, write, and admin tiers.
 
-```yaml
-# Read-only agent for general Notion reads
-mcp_servers:
-  notion_read:
-    command: notion-cli
-    args: [mcp]
-    env: { NOTION_TOKEN: ntn_xxx }
+See [docs/runtime-samples/claude-desktop.sample.json](../docs/runtime-samples/claude-desktop.sample.json) for Claude Desktop config.
 
-# Mutation agent with write-only scope
-mcp_servers:
-  notion_write:
-    command: notion-cli
-    args: [mcp, --allow-write, --audit-log, /var/log/notion-audit.jsonl]
-    env: { NOTION_TOKEN: ntn_xxx }
-
-# Operator-spawned admin session (not a persistent profile)
-mcp_servers:
-  notion_admin:
-    command: notion-cli
-    args:
-      - mcp
-      - --allow-admin
-      - --audit-log
-      - /var/log/notion-audit.jsonl
-      - --admin-log
-      - /var/log/notion-admin.jsonl
-    env:
-      NOTION_TOKEN: ntn_xxx
-      NOTION_CLI_ADMIN_CONFIRMED: "1"
-    enabled: false   # opt-in per session, not continuous
-```
+See [docs/runtime-samples/cursor-mcp.sample.json](../docs/runtime-samples/cursor-mcp.sample.json) for Cursor config.
 
 ## Important concepts (API 2025-09-03+)
 

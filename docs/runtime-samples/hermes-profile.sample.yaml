@@ -1,0 +1,46 @@
+# SAMPLE ONLY — NOT ENFORCED / NOT CANONICAL
+# Canonical source: clawhub/SKILL.md
+
+# Hermes profile example invoking notion-cli mcp with --allow-write.
+# Copy and adapt to your actual Hermes config directory.
+# Replace NOTION_TOKEN with your real integration token.
+
+profiles:
+  notion_read:
+    description: "Read-only Notion access — safe default for general agents"
+    mcp_servers:
+      notion:
+        command: notion-cli
+        args: [mcp]
+        env:
+          NOTION_TOKEN: "ntn_your_token_here"
+
+  notion_write:
+    description: "Runtime writes — create/update pages and blocks"
+    mcp_servers:
+      notion:
+        command: notion-cli
+        args:
+          - mcp
+          - --allow-write
+          - --audit-log
+          - /var/log/notion-audit.jsonl
+        env:
+          NOTION_TOKEN: "ntn_your_token_here"
+
+  notion_admin:
+    description: "Admin lifecycle — schema mutation, relation wiring, page move, db update"
+    mcp_servers:
+      notion:
+        command: notion-cli
+        args:
+          - mcp
+          - --allow-admin
+          - --audit-log
+          - /var/log/notion-audit.jsonl
+          - --admin-log
+          - /var/log/notion-admin.jsonl
+        env:
+          NOTION_TOKEN: "ntn_your_token_here"
+          NOTION_CLI_ADMIN_CONFIRMED: "1"
+        enabled: false  # opt-in per session, not continuous

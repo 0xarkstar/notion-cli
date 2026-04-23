@@ -22,7 +22,7 @@ fn make_client(server: &MockServer) -> NotionClient {
         connect_timeout: Duration::from_secs(5),
         total_timeout: Duration::from_secs(10),
         max_response_bytes: notion_cli::api::MAX_RESPONSE_BYTES,
-        rate_limit_per_sec: NonZeroU32::new(100).unwrap(),
+        rate_limit_per_sec: NonZeroU32::new(100).unwrap(), cache_ttl: None,
     };
     NotionClient::with_config(&NotionToken::new(TEST_TOKEN), config).unwrap()
 }

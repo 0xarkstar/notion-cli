@@ -40,7 +40,7 @@ pub enum CreateDataSourceParent {
 /// `properties` is left as raw JSON because the schema-definition
 /// surface (`{ "Name": { "title": {} }, "Tags": { "multi_select": {} } }`)
 /// is complex; typed coverage is deferred to v0.2.
-#[derive(Debug, Clone, Serialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct CreateDataSourceRequest {
     pub parent: CreateDataSourceParent,
     #[serde(skip_serializing_if = "Vec::is_empty")]

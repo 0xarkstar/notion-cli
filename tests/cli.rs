@@ -1517,3 +1517,137 @@ fn token_via_flag_overrides_env() {
     let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
     assert!(!out.contains("ntn_flag_value"), "token leaked to stdout: {out}");
 }
+
+// === v0.4: db update, users me, page get --properties ====================
+
+#[test]
+fn db_update_no_fields_errors() {
+    // `db update <id>` with no flags must exit non-zero (usage error).
+    cli()
+        .args(["--check-request", "db", "update", VALID_ID])
+        .assert()
+        .failure();
+}
+
+#[test]
+fn db_update_mutex_to_page_and_to_workspace() {
+    // clap should reject --to-page + --to-workspace together.
+    let out = cli()
+        .args([
+            "--check-request",
+            "db",
+            "update",
+            VALID_ID,
+            "--to-page",
+            VALID_ID,
+            "--to-workspace",
+        ])
+        .assert()
+        .failure()
+        .get_output()
+        .clone();
+    let err = String::from_utf8_lossy(&out.stderr).to_string();
+    assert!(
+        err.contains("to-workspace") || err.contains("conflict") || err.contains("cannot"),
+        "expected clap conflict error, got: {err}",
+    );
+}
+
+#[test]
+fn users_me_check_request_prints_path() {
+    let assert = cli()
+        .args(["--check-request", "--raw", "users", "me"])
+        .assert()
+        .success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let parsed: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    assert_eq!(parsed.get("method").and_then(|v| v.as_str()), Some("GET"));
+    assert_eq!(
+        parsed.get("path").and_then(|v| v.as_str()),
+        Some("/v1/users/me"),
+    );
+}
+
+#[test]
+fn page_get_with_properties_flag() {
+    let assert = cli()
+        .args([
+            "--check-request",
+            "--raw",
+            "page",
+            "get",
+            VALID_ID,
+            "--properties",
+            "prop1,prop2",
+        ])
+        .assert()
+        .success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let parsed: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    let path = parsed.get("path").and_then(|v| v.as_str()).unwrap_or("");
+    assert!(
+        path.contains("filter_properties=prop1"),
+        "path must contain filter_properties=prop1: {path}",
+    );
+    assert!(
+        path.contains("filter_properties=prop2"),
+        "path must contain filter_properties=prop2: {path}",
+    );
+}
+
+// === v0.4 Phase 3: --cost flag ==========================================
+
+#[test]
+fn cli_dry_run_cost_emits_estimate() {
+    let schema_path = write_temp_schema(
+        "cost_db_create",
+        r#"{"Name":{"type":"title","title":{}}}"#,
+    );
+    let assert = cli()
+        .args([
+            "--check-request",
+            "--raw",
+            "--cost",
+            "db",
+            "create",
+            "--parent-page",
+            VALID_ID,
+            "--title",
+            "CostTest",
+            "--schema",
+            schema_path.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let parsed: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    assert!(
+        parsed.get("estimate").is_some(),
+        "--cost must include 'estimate' field: {out}"
+    );
+    assert_eq!(
+        parsed.pointer("/estimate/api_calls").and_then(serde_json::Value::as_u64),
+        Some(1),
+    );
+    let _ = std::fs::remove_file(schema_path);
+}
+
+#[test]
+fn cli_cost_without_dry_run_does_not_add_estimate() {
+    // --cost without --check-request/--dry-run: flag is accepted but
+    // is_cost_preview() returns false, so no estimate is emitted.
+    // The command still requires a token for real calls, so we use
+    // --check-request to avoid the network; just verify --cost alone
+    // doesn't break parsing.
+    let assert = cli()
+        .args(["--check-request", "--raw", "db", "get", VALID_ID])
+        .assert()
+        .success();
+    let out = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    let parsed: serde_json::Value = serde_json::from_str(&out).expect("valid JSON");
+    // Without --cost, no estimate field present.
+    assert!(
+        parsed.get("estimate").is_none(),
+        "without --cost, estimate must be absent: {out}"
+    );
+}

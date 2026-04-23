@@ -80,6 +80,7 @@ fn make_client(server: &MockServer) -> NotionClient {
         total_timeout: Duration::from_secs(10),
         max_response_bytes: notion_cli::api::MAX_RESPONSE_BYTES,
         rate_limit_per_sec: NonZeroU32::new(100).unwrap(), // fast for tests
+        cache_ttl: None,
     };
     NotionClient::with_config(&NotionToken::new(TEST_TOKEN), config).unwrap()
 }
@@ -268,7 +269,7 @@ async fn oversized_response_fails_with_body_too_large() {
         connect_timeout: Duration::from_secs(5),
         total_timeout: Duration::from_secs(10),
         max_response_bytes: 1024,
-        rate_limit_per_sec: NonZeroU32::new(100).unwrap(),
+        rate_limit_per_sec: NonZeroU32::new(100).unwrap(), cache_ttl: None,
     };
     let client = NotionClient::with_config(&NotionToken::new(TEST_TOKEN), config).unwrap();
     let err = client
@@ -1219,6 +1220,7 @@ async fn rate_limiter_paces_requests() {
         total_timeout: Duration::from_secs(10),
         max_response_bytes: notion_cli::api::MAX_RESPONSE_BYTES,
         rate_limit_per_sec: NonZeroU32::new(3).unwrap(),
+        cache_ttl: None,
     };
     let client = NotionClient::with_config(&NotionToken::new(TEST_TOKEN), config).unwrap();
     let page_id = PageId::parse(PAGE_ID_HEX).unwrap();
@@ -1236,5 +1238,130 @@ async fn rate_limiter_paces_requests() {
     assert!(
         elapsed >= Duration::from_millis(600),
         "3 req/s means 3 more requests take ~1s after bucket drain; elapsed={elapsed:?}",
+    );
+}
+
+// === v0.4: update_database, retrieve_me, retrieve_page_property ==========
+
+use notion_cli::api::database::UpdateDatabaseRequest;
+
+#[tokio::test]
+async fn update_database_sends_correct_patch_body() {
+    let server = MockServer::start().await;
+    Mock::given(method("PATCH"))
+        .and(path(format!("/v1/databases/{DB_ID_HEX}")))
+        .and(body_json(json!({
+            "parent": {"type": "page_id", "page_id": PAGE_ID_HEX},
+            "title": [{
+                "type": "text",
+                "text": {"content": "Tasks v2"},
+                "annotations": {
+                    "bold": false, "italic": false, "strikethrough": false,
+                    "underline": false, "code": false, "color": "default"
+                },
+                "plain_text": "Tasks v2"
+            }],
+            "icon": {"type": "emoji", "emoji": "📋"}
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(test_database_json(DB_ID_HEX)))
+        .mount(&server)
+        .await;
+
+    let client = make_client(&server);
+    let req = UpdateDatabaseRequest {
+        parent: Some(notion_cli::api::database::DatabaseParentUpdate::page(
+            PageId::parse(PAGE_ID_HEX).unwrap(),
+        )),
+        title: Some(RichText::plain("Tasks v2")),
+        icon: Some(Some(notion_cli::types::icon::Icon::emoji("📋"))),
+        ..Default::default()
+    };
+    let db = client
+        .update_database(&DatabaseId::parse(DB_ID_HEX).unwrap(), &req)
+        .await
+        .unwrap();
+    assert_eq!(db.id.as_str(), DB_ID_HEX);
+}
+
+#[tokio::test]
+async fn update_database_tristate_icon_clear() {
+    let server = MockServer::start().await;
+    Mock::given(method("PATCH"))
+        .and(path(format!("/v1/databases/{DB_ID_HEX}")))
+        .and(body_json(json!({"icon": null})))
+        .respond_with(ResponseTemplate::new(200).set_body_json(test_database_json(DB_ID_HEX)))
+        .mount(&server)
+        .await;
+
+    let client = make_client(&server);
+    let req = UpdateDatabaseRequest {
+        icon: Some(None), // tristate: clear
+        ..Default::default()
+    };
+    let db = client
+        .update_database(&DatabaseId::parse(DB_ID_HEX).unwrap(), &req)
+        .await
+        .unwrap();
+    assert_eq!(db.id.as_str(), DB_ID_HEX);
+}
+
+#[tokio::test]
+async fn retrieve_me_returns_bot_user() {
+    let bot_hex = "aaaabbbbccccddddaaaabbbbccccdddd";
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/users/me"))
+        .and(header("Notion-Version", NOTION_API_VERSION))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "object": "user",
+            "id": bot_hex,
+            "type": "bot",
+            "bot": {"owner": {"type": "workspace", "workspace": true}, "workspace_name": "Test WS"},
+            "name": "My Integration",
+            "avatar_url": null
+        })))
+        .mount(&server)
+        .await;
+
+    let client = make_client(&server);
+    let user = client.retrieve_me().await.unwrap();
+    assert!(user.is_bot());
+    assert_eq!(user.name.as_deref(), Some("My Integration"));
+}
+
+#[tokio::test]
+async fn retrieve_page_property_paginates_relation() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path(format!("/v1/pages/{PAGE_ID_HEX}/properties/prop_abc")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "object": "list",
+            "results": [
+                {"object": "property_item", "type": "relation", "relation": {"id": "r1"}},
+                {"object": "property_item", "type": "relation", "relation": {"id": "r2"}}
+            ],
+            "has_more": true,
+            "next_cursor": "cursor_xyz"
+        })))
+        .mount(&server)
+        .await;
+
+    let client = make_client(&server);
+    let result = client
+        .retrieve_page_property(
+            &PageId::parse(PAGE_ID_HEX).unwrap(),
+            "prop_abc",
+            None,
+            Some(2),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        result.pointer("/has_more").and_then(serde_json::Value::as_bool),
+        Some(true),
+    );
+    assert_eq!(
+        result.pointer("/next_cursor").and_then(serde_json::Value::as_str),
+        Some("cursor_xyz"),
     );
 }

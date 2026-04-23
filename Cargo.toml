@@ -1,6 +1,6 @@
 [package]
 name = "notion-cli-mcp"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 rust-version = "1.85"
 license = "MIT"
@@ -39,6 +39,10 @@ install-updater = false
 name = "notion_cli"
 path = "src/lib.rs"
 
+[features]
+default = []
+otel = ["dep:opentelemetry", "dep:opentelemetry-otlp", "dep:tracing-opentelemetry", "dep:opentelemetry_sdk"]
+
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -52,6 +56,28 @@ futures-util = { version = "0.3", default-features = false, features = ["std"] }
 clap = { version = "4.6", features = ["derive", "env", "wrap_help"] }
 rmcp = { version = "1.4", features = ["server", "macros", "transport-io", "schemars"] }
 anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
+uuid = { version = "1", features = ["v4", "v7"] }
+lru = "0.16"
+
+[dependencies.opentelemetry]
+version = "0.28"
+optional = true
+
+[dependencies.opentelemetry-otlp]
+version = "0.28"
+features = ["tonic"]
+optional = true
+
+[dependencies.opentelemetry_sdk]
+version = "0.28"
+features = ["rt-tokio"]
+optional = true
+
+[dependencies.tracing-opentelemetry]
+version = "0.29"
+optional = true
 
 [[bin]]
 name = "notion-cli"
@@ -61,6 +87,8 @@ path = "src/main.rs"
 proptest = "1"
 wiremock = "0.6"
 assert_cmd = "2"
+uuid = { version = "1", features = ["v4", "v7"] }
+tempfile = "3"
 
 [lints.rust]
 unsafe_code = "forbid"

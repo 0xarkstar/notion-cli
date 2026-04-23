@@ -102,6 +102,60 @@ fn validation_hint(code: &str, message: &str) -> Option<&'static str> {
         );
     }
 
+    // Target data source not shared with integration (relation wiring).
+    if msg.contains("target data source not shared with integration") {
+        return Some(
+            "The target data source is not shared with this integration. Open the target's Share menu and add the integration.",
+        );
+    }
+
+    // Wiki databases cannot parent other databases.
+    if msg.contains("cannot create database under wiki") {
+        return Some(
+            "Wikis cannot parent databases directly. Create a regular page first and add the database there.",
+        );
+    }
+
+    // Synced block property name collision.
+    if msg.contains("property name conflicts with synced content") {
+        return Some(
+            "A synced block or reference holds a property with this name. Rename the property or remove the synced reference.",
+        );
+    }
+
+    // Page move restrictions.
+    if msg.contains("cannot move page") {
+        return Some(
+            "Page moves require (a) source is a regular page (not database), (b) integration has edit access to new parent, (c) same workspace as source.",
+        );
+    }
+
+    None
+}
+
+/// Map HTTP-level errors (status code + context) to a user-actionable hint.
+///
+/// Called from the `ServerError` display path — returns `None` when no
+/// pattern matches.
+pub fn server_error_hint(status: u16, message: &str) -> Option<&'static str> {
+    let msg = message.to_ascii_lowercase();
+
+    // Workspace-level operations require OAuth user token, not integration token.
+    if status == 403 && (msg.contains("workspace") || msg.contains("workspace_id")) {
+        return Some(
+            "Workspace-level operations (like moving databases to workspace root) require an OAuth user token. Integration tokens typically receive 403 here.",
+        );
+    }
+
+    // filter_properties contains an invalid property ID.
+    if (msg.contains("filter_properties") || msg.contains("not found"))
+        && (status == 404 || msg.contains("404"))
+    {
+        return Some(
+            "Property ID passed via --properties / filter_properties is invalid. Property IDs are the internal Notion identifiers, not display names. Retrieve the page without --properties first to see valid IDs.",
+        );
+    }
+
     None
 }
 

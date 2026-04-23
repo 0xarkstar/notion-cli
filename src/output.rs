@@ -27,6 +27,41 @@ pub struct OutputOptions {
     pub pretty: bool,
 }
 
+/// Stream frame types per E4.
+///
+/// Wire format (one line per frame, JSON object):
+/// - `{"type":"item","content":{...}}` per row
+/// - `{"type":"end","cursor":null}` on clean finish
+/// - `{"type":"error","at_cursor":"...","code":"...","message":"..."}` on mid-stream failure
+///
+/// Exit code 1 when an error frame is emitted.
+pub fn emit_stream_item(content: &serde_json::Value) -> Result<(), serde_json::Error> {
+    let frame = serde_json::json!({ "type": "item", "content": content });
+    println!("{}", serde_json::to_string(&frame)?);
+    Ok(())
+}
+
+pub fn emit_stream_end(next_cursor: Option<&str>) -> Result<(), serde_json::Error> {
+    let frame = serde_json::json!({ "type": "end", "cursor": next_cursor });
+    println!("{}", serde_json::to_string(&frame)?);
+    Ok(())
+}
+
+pub fn emit_stream_error(
+    at_cursor: Option<&str>,
+    code: &str,
+    message: &str,
+) -> Result<(), serde_json::Error> {
+    let frame = serde_json::json!({
+        "type": "error",
+        "at_cursor": at_cursor,
+        "code": code,
+        "message": message,
+    });
+    println!("{}", serde_json::to_string(&frame)?);
+    Ok(())
+}
+
 /// Wrap an already-serialised value in the untrusted envelope.
 #[must_use]
 pub fn wrap_untrusted(content: &serde_json::Value) -> serde_json::Value {

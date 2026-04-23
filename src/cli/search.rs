@@ -4,7 +4,7 @@ use clap::Args;
 
 use crate::api::search::SearchRequest;
 use crate::cli::{build_client, Cli, CliError};
-use crate::output::emit;
+use crate::output::{emit, emit_stream_end, emit_stream_error, emit_stream_item};
 
 #[derive(Args, Debug)]
 pub struct SearchArgs {
@@ -45,7 +45,7 @@ pub async fn run(cli: &Cli, args: &SearchArgs) -> Result<(), CliError> {
         start_cursor: args.start_cursor.clone(),
         page_size: args.page_size,
     };
-    if cli.check_request {
+    if cli.is_dry_run() {
         emit(&cli.output_options(), &serde_json::json!({
             "method": "POST",
             "path": "/v1/search",
@@ -54,6 +54,36 @@ pub async fn run(cli: &Cli, args: &SearchArgs) -> Result<(), CliError> {
         return Ok(());
     }
     let client = build_client(cli)?;
+    if cli.is_stream() {
+        let mut cur_req = req;
+        let mut last_cursor: Option<String> = None;
+        loop {
+            let resp = match client.search(&cur_req).await {
+                Ok(r) => r,
+                Err(e) => {
+                    emit_stream_error(
+                        last_cursor.as_deref(),
+                        "api_error",
+                        &e.to_string(),
+                    )?;
+                    return Err(CliError::Api(e));
+                }
+            };
+            last_cursor.clone_from(&resp.next_cursor);
+            for item in &resp.results {
+                emit_stream_item(item)?;
+            }
+            if resp.is_exhausted() {
+                emit_stream_end(resp.next_cursor.as_deref())?;
+                break;
+            }
+            cur_req = SearchRequest {
+                start_cursor: resp.next_cursor,
+                ..cur_req
+            };
+        }
+        return Ok(());
+    }
     let resp = client.search(&req).await?;
     emit(&cli.output_options(), &resp)?;
     Ok(())

@@ -12,6 +12,9 @@
 //! - Retry: on HTTP 429 only, honouring `Retry-After`, capped at 3
 //!   attempts. 5xx errors propagate to the caller for application-
 //!   level retry.
+//! - GET response LRU cache: opt-in via `NOTION_CLI_CACHE_TTL` env
+//!   (seconds). Writes invalidate by entity path prefix.
+//! - Idempotency-Key: auto-generated UUID v4 on every POST/PATCH.
 
 use std::num::NonZeroU32;
 use std::sync::Arc;
@@ -25,9 +28,11 @@ use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE, RETRY
 use reqwest::{Method, StatusCode};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+use uuid::Uuid;
 
 use crate::api::error::ApiError;
 use crate::api::version::{NOTION_API_BASE, NOTION_API_VERSION};
+use crate::cache::{LruCache, SharedCache};
 use crate::config::NotionToken;
 
 pub const MAX_RESPONSE_BYTES: usize = 10 * 1024 * 1024;
@@ -41,6 +46,7 @@ pub struct NotionClient {
     base_url: String,
     rate_limiter: Arc<DirectRateLimiter>,
     max_response_bytes: usize,
+    cache: Option<SharedCache>,
 }
 
 #[derive(Clone, Debug)]
@@ -50,6 +56,8 @@ pub struct ClientConfig {
     pub total_timeout: Duration,
     pub max_response_bytes: usize,
     pub rate_limit_per_sec: NonZeroU32,
+    /// When `Some`, a GET response LRU cache is enabled with the given TTL.
+    pub cache_ttl: Option<Duration>,
 }
 
 impl Default for ClientConfig {
@@ -61,13 +69,21 @@ impl Default for ClientConfig {
             max_response_bytes: MAX_RESPONSE_BYTES,
             rate_limit_per_sec: NonZeroU32::new(DEFAULT_RATE_LIMIT_PER_SEC)
                 .expect("3 is non-zero"),
+            cache_ttl: None,
         }
     }
 }
 
 impl NotionClient {
     pub fn new(token: &NotionToken) -> Result<Self, ApiError> {
-        Self::with_config(token, ClientConfig::default())
+        // Activate cache from env var if set.
+        let cache_ttl = std::env::var("NOTION_CLI_CACHE_TTL")
+            .ok()
+            .and_then(|s| s.parse::<u64>().ok())
+            .map(Duration::from_secs);
+
+        let config = ClientConfig { cache_ttl, ..ClientConfig::default() };
+        Self::with_config(token, config)
     }
 
     pub fn with_config(token: &NotionToken, config: ClientConfig) -> Result<Self, ApiError> {
@@ -82,16 +98,36 @@ impl NotionClient {
         let quota = Quota::per_second(config.rate_limit_per_sec);
         let rate_limiter = Arc::new(RateLimiter::direct(quota));
 
+        let cache: Option<SharedCache> = config
+            .cache_ttl
+            .map(|ttl| Arc::new(LruCache::with_ttl(ttl)) as SharedCache);
+
         Ok(Self {
             http,
             base_url: config.base_url,
             rate_limiter,
             max_response_bytes: config.max_response_bytes,
+            cache,
         })
     }
 
     pub async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T, ApiError> {
-        self.request::<_, T>(Method::GET, path, None::<&()>).await
+        // Check cache first.
+        if let Some(cache) = &self.cache {
+            if let Some(cached) = cache.get(path) {
+                return serde_json::from_value(cached).map_err(ApiError::Json);
+            }
+        }
+
+        let value: serde_json::Value =
+            self.request::<_, serde_json::Value>(Method::GET, path, None::<&()>, None).await?;
+
+        // Store in cache.
+        if let Some(cache) = &self.cache {
+            cache.put(path.to_string(), value.clone());
+        }
+
+        serde_json::from_value(value).map_err(ApiError::Json)
     }
 
     pub async fn post<B: Serialize, T: DeserializeOwned>(
@@ -99,11 +135,18 @@ impl NotionClient {
         path: &str,
         body: &B,
     ) -> Result<T, ApiError> {
-        self.request(Method::POST, path, Some(body)).await
+        let key = Uuid::new_v4().to_string();
+        let result = self.request(Method::POST, path, Some(body), Some(&key)).await?;
+        self.invalidate_cache(path);
+        Ok(result)
     }
 
     pub async fn delete<T: DeserializeOwned>(&self, path: &str) -> Result<T, ApiError> {
-        self.request::<_, T>(Method::DELETE, path, None::<&()>).await
+        let result = self
+            .request::<_, T>(Method::DELETE, path, None::<&()>, None)
+            .await?;
+        self.invalidate_cache(path);
+        Ok(result)
     }
 
     pub async fn patch<B: Serialize, T: DeserializeOwned>(
@@ -111,7 +154,18 @@ impl NotionClient {
         path: &str,
         body: &B,
     ) -> Result<T, ApiError> {
-        self.request(Method::PATCH, path, Some(body)).await
+        let key = Uuid::new_v4().to_string();
+        let result = self.request(Method::PATCH, path, Some(body), Some(&key)).await?;
+        self.invalidate_cache(path);
+        Ok(result)
+    }
+
+    fn invalidate_cache(&self, path: &str) {
+        if let Some(cache) = &self.cache {
+            // Strip query string for prefix matching.
+            let prefix = path.split('?').next().unwrap_or(path);
+            cache.invalidate_prefix(prefix);
+        }
     }
 
     async fn request<B: Serialize, T: DeserializeOwned>(
@@ -119,10 +173,13 @@ impl NotionClient {
         method: Method,
         path: &str,
         body: Option<&B>,
+        idempotency_key: Option<&str>,
     ) -> Result<T, ApiError> {
         for attempt in 1..=MAX_RETRY_ATTEMPTS {
             self.rate_limiter.until_ready().await;
-            let result = self.do_request_once::<B, T>(method.clone(), path, body).await;
+            let result = self
+                .do_request_once::<B, T>(method.clone(), path, body, idempotency_key)
+                .await;
             match &result {
                 Err(ApiError::RateLimited { retry_after }) if attempt < MAX_RETRY_ATTEMPTS => {
                     let wait = retry_after.unwrap_or(1).min(30);
@@ -141,11 +198,15 @@ impl NotionClient {
         method: Method,
         path: &str,
         body: Option<&B>,
+        idempotency_key: Option<&str>,
     ) -> Result<T, ApiError> {
         let url = format!("{}/v1{}", self.base_url, path);
         let mut req = self.http.request(method, &url);
         if let Some(b) = body {
             req = req.json(b);
+        }
+        if let Some(key) = idempotency_key {
+            req = req.header("Idempotency-Key", key);
         }
 
         let resp = req.send().await.map_err(scrub_reqwest_err)?;

@@ -70,4 +70,12 @@ impl NotionClient {
     pub async fn retrieve_user(&self, id: &UserId) -> Result<User, ApiError> {
         self.get(&format!("/users/{id}")).await
     }
+
+    /// `GET /v1/users/me` — retrieve the bot user tied to the current
+    /// integration token. Does NOT enumerate workspace users — it
+    /// returns only the caller's own identity. Safe to expose over
+    /// MCP (v0.4 M4 / D9-exception).
+    pub async fn retrieve_me(&self) -> Result<User, ApiError> {
+        self.get("/users/me").await
+    }
 }

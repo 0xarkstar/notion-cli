@@ -34,7 +34,7 @@ pub enum PageParent {
 /// `children` optionally provides the page body at creation time —
 /// one-shot page + body in a single API call (preferred over
 /// create + append).
-#[derive(Debug, Clone, Serialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct CreatePageRequest {
     pub parent: PageParent,
     pub properties: HashMap<String, PropertyValue>,
@@ -52,7 +52,7 @@ pub struct CreatePageRequest {
 /// - `None` → field absent in body → leave unchanged
 /// - `Some(None)` → emitted as JSON `null` → clear
 /// - `Some(Some(v))` → emitted as the value → set
-#[derive(Debug, Clone, Serialize, Default, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, JsonSchema)]
 pub struct UpdatePageRequest {
     #[serde(skip_serializing_if = "HashMap::is_empty")]
     pub properties: HashMap<String, PropertyValue>,
@@ -87,7 +87,7 @@ pub enum MoveTarget {
 
 /// The `parent` block on the move-page request body. Mirrors
 /// [`PageParent`] but with the 2026-01-15 move-specific variants.
-#[derive(Debug, Clone, Serialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ParentForMove {
     #[serde(rename = "page_id")]
@@ -106,15 +106,92 @@ impl From<MoveTarget> for ParentForMove {
 }
 
 /// Request body for `POST /v1/pages/{page_id}/move`.
-#[derive(Debug, Clone, Serialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct MovePageRequest {
     pub parent: ParentForMove,
 }
+
+/// Single-item or paginated-list response from
+/// `GET /v1/pages/{page_id}/properties/{prop_id}`.
+///
+/// Scalar property types (`number`, `select`, `checkbox`, `date`,
+/// `url`, `email`, `phone_number`, `formula`, `created_time`,
+/// `last_edited_time`, `created_by`, `last_edited_by`, `status`) return
+/// a single `PropertyItem` object. List-valued types (`title`,
+/// `rich_text`, `relation`, `rollup`, `people`, `files`) return a
+/// paginated `list` with `next_cursor` / `has_more`. The server
+/// discriminates on a top-level `object` field: `"property_item"` vs
+/// `"list"`.
+///
+/// v0.4 returns the raw `serde_json::Value` to the caller so CLI can
+/// dispatch on shape at the presentation layer — modeling both
+/// variants as typed Rust would require a full `PropertyItem`
+/// taxonomy that v0.4 doesn't need to ship.
+pub type PagePropertyResponse = serde_json::Value;
 
 impl NotionClient {
     /// `GET /v1/pages/{id}`.
     pub async fn retrieve_page(&self, id: &PageId) -> Result<Page, ApiError> {
         self.get(&format!("/pages/{id}")).await
+    }
+
+    /// `GET /v1/pages/{id}?filter_properties=<ids>` — Notion's field-mask
+    /// for page retrieval. Only the listed property IDs are hydrated in
+    /// the response; others are omitted. Useful for large-schema pages
+    /// where the agent needs only one or two columns.
+    ///
+    /// Pass property IDs (the internal ones, not display names). Empty
+    /// vec falls back to [`retrieve_page`] semantics (no filter).
+    pub async fn retrieve_page_filtered(
+        &self,
+        id: &PageId,
+        property_ids: &[String],
+    ) -> Result<Page, ApiError> {
+        if property_ids.is_empty() {
+            return self.retrieve_page(id).await;
+        }
+        let mut path = format!("/pages/{id}?");
+        let mut first = true;
+        for pid in property_ids {
+            if !first {
+                path.push('&');
+            }
+            path.push_str("filter_properties=");
+            path.push_str(pid);
+            first = false;
+        }
+        self.get(&path).await
+    }
+
+    /// `GET /v1/pages/{page_id}/properties/{prop_id}` — read a single
+    /// property of a page. Supports paginated retrieval for
+    /// list-valued property types (relation with 25+ entries, rollup,
+    /// people, title, `rich_text`). Scalar types return immediately.
+    ///
+    /// Returns the raw response as `serde_json::Value` — callers
+    /// dispatch on the top-level `object` field (`"property_item"`
+    /// for scalars, `"list"` for paginated). See
+    /// [`PagePropertyResponse`].
+    pub async fn retrieve_page_property(
+        &self,
+        page_id: &PageId,
+        property_id: &str,
+        start_cursor: Option<&str>,
+        page_size: Option<u8>,
+    ) -> Result<PagePropertyResponse, ApiError> {
+        let mut path = format!("/pages/{page_id}/properties/{property_id}");
+        let mut qs: Vec<String> = Vec::new();
+        if let Some(c) = start_cursor {
+            qs.push(format!("start_cursor={c}"));
+        }
+        if let Some(s) = page_size {
+            qs.push(format!("page_size={s}"));
+        }
+        if !qs.is_empty() {
+            path.push('?');
+            path.push_str(&qs.join("&"));
+        }
+        self.get(&path).await
     }
 
     /// `POST /v1/pages`.

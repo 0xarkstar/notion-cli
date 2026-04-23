@@ -1,5 +1,151 @@
 # Changelog
 
+## 0.4.0 — 2026-04-23
+
+Agent-first CLI alignment per Justin Poehnelt's 11 principles
+("Rewrite your CLI for AI Agents"). Non-BREAKING for JSON consumers
+— every v0.3 subcommand, MCP tool, and env var is preserved.
+
+Key additions: missing API trio (`db update` / `users me` /
+`page get-property`), universal `--json <body>` on 7 mutation
+commands, NDJSON streaming on 5 paginated commands, observability
+baseline (UUID v7 `request_id`, `tracing` wiring, OTel behind a
+cargo feature), GET response cache (opt-in via
+`NOTION_CLI_CACHE_TTL`), auto-generated `Idempotency-Key` on
+write/admin HTTP requests, and a `TokenProvider` chain
+(env / file / keychain on macOS / exec).
+
+### Added — Missing API (Phase 1)
+
+- **`db update`** (`db_update` MCP tool) — `PATCH /v1/databases/{id}`.
+  Mutates title / description / icon / cover / `is_inline` /
+  `is_locked` / `in_trash` and supports parent reassignment via
+  `--to-page <id>` or `--to-workspace`. `PATCH /v1/databases` accepts
+  the `parent` field directly (verified 2026-04-23 — unlike
+  `PATCH /v1/pages` which rejects parent changes). Workspace-root
+  targets typically return 403 on integration tokens; the new error
+  hint documents the OAuth requirement.
+- **`users me`** (`users_me` MCP tool) + **`auth whoami`** alias —
+  `GET /v1/users/me`. Returns only the bot's own identity (D9
+  exception granted; does NOT enumerate workspace users).
+- **`page get --properties <id1,id2,…>`** — Notion `filter_properties`
+  query param (Justin principle #3 field-masking).
+- **`page get-property <page> <prop-id>`** —
+  `GET /v1/pages/{page}/properties/{prop_id}`. Paginates for
+  list-valued property types (relation with 25+ entries, rollup,
+  people, title, `rich_text`); scalar types return immediately.
+
+### Added — Universal `--json <body>` (Phase 2)
+
+All 7 mutation CLI subcommands accept `--json <body>`:
+
+- `--json '{"…"}'` — inline JSON literal
+- `--json -` — read from stdin
+- `--json @path/to/file.json` — read from file
+
+Applies to: `page create`, `page update`, `page move`, `db create`,
+`db update`, `ds create`, `ds update`. Mutually exclusive with
+bespoke body flags — mixing rejected with exit 2 and a targeted
+error (E8 rule: not silent).
+
+### Added — NDJSON streaming (Phase 2)
+
+`--stream` / `--format jsonl` on 5 paginated commands
+(`ds query`, `block list`, `search`, `users list`, `comments list`).
+Frame format:
+
+- `{"type":"item","content":{…}}` per row
+- `{"type":"end","cursor":null}` clean terminator
+- `{"type":"error","at_cursor":"…","code":"…","message":"…"}`
+  mid-stream failure (exit 1)
+
+### Added — Dry-run + cost preview (Phase 2/3)
+
+- **`--dry-run`** — alias for `--check-request`.
+- **`--check-request --cost`** — emits an estimated API-call count
+  and rate-limit window instead of the full request body. Wired on
+  `db create`, `db update`, `users list`.
+
+### Added — Observability (Phase 3)
+
+- **UUID v7 `request_id`** generated per MCP tool invocation.
+  Propagated to the audit log as the last struct field
+  (`skip_serializing_if_none` — v0.3 readers that match by JSON key
+  stay compatible; positional parsers must update).
+- **`tracing` subscriber** installed at startup (respects `RUST_LOG`,
+  writes to stderr, target column hidden by default).
+- **OTel exporter** behind cargo feature `otel`
+  (`cargo build --features otel`). Skeleton install for v0.4;
+  full OTLP wiring lands in v0.5.
+- **Error hints +6** — relation-unshared, wiki-parent,
+  synced-name-collision, move-restrictions,
+  integration-workspace-403, property-filter-id-404.
+
+### Added — Cache / Idempotency / Tokens (Phase 4)
+
+- **GET response LRU cache** — default OFF. Activate via
+  `NOTION_CLI_CACHE_TTL=<seconds>`. Writes automatically invalidate
+  cache entries for the mutated entity. Per-process only (no disk).
+- **`Idempotency-Key`** header auto-generated (UUID v4) on every
+  POST / PATCH. MCP params gained optional `idempotency_key` to
+  override the generated value when the caller needs retry safety
+  across process restarts.
+- **`TokenProvider` chain** —
+  `env:NOTION_TOKEN` → `file:$NOTION_TOKEN_FILE` →
+  `keychain:<notion-cli>` (macOS `security` CLI — no
+  `security-framework` dep) → `exec:$NOTION_TOKEN_CMD`. First Ok
+  wins; emits a stderr **shadowing warning** when multiple backends
+  resolve a token so a stale `NOTION_TOKEN` env doesn't silently
+  eclipse a keychain entry.
+
+### Added — MCP surface changes
+
+- **RO tier 6 → 7** — `users_me` added (D9 exception).
+- **Write tier 12 → 13** — inherits `users_me`.
+- **Admin tier 16 → 18** — adds `db_update` and inherits `users_me`.
+- MCP write/admin tool descriptions now include full JSON body
+  examples sourced from `docs/cookbook/snippets/` via
+  `#[doc = include_str!(…)]` (B2-resolved doc-comment fallback for
+  rmcp-macros 1.4 — `#[tool(description=…)]` requires a literal
+  string).
+
+### Added — Documentation
+
+- `docs/cookbook/` — 4 canonical workflows: `bootstrap-workspace`,
+  `bulk-import-csv`, `reconcile-schema`, `agent-idempotent-writes`.
+- `docs/cookbook/snippets/` — per-tool JSON body examples consumed
+  at compile time by MCP tool doc-strings.
+- `docs/runtime-samples/` — 3 sample configs (Hermes, Claude Desktop,
+  Cursor). Sample-only — not canonical — explicit header.
+
+### Changed
+
+- `clawhub/SKILL.md` → v2.1.0. Canonical vs sample boundary made
+  explicit. `requires.env` unchanged (`[NOTION_TOKEN]` only) —
+  Scanner verdict preserved.
+- `Cargo.toml` 0.3.0 → 0.4.0. New deps: `tracing`, `tracing-subscriber`,
+  `uuid`, `lru`. Feature flag `otel` wires `opentelemetry`,
+  `opentelemetry-otlp`, `opentelemetry_sdk`, `tracing-opentelemetry`
+  (all pinned at 0.28 / 0.29 — optional).
+- CLI adds global `--dry-run`, `--cost`, `--stream`, `--format`
+  flags. Global `--check-request` and `--dry-run` are mutually
+  exclusive at clap level.
+- `TokenProvider` chain transparently replaces the direct env read
+  in `build_client` — behavior identical when only `NOTION_TOKEN`
+  is set (chain's first provider is env).
+
+### Compatibility
+
+- **Audit JSONL**: consumers that match by JSON key are unaffected.
+  Consumers that parse by byte offset or column position see a new
+  trailing `request_id` field — adjust parsers.
+- **All v0.3 CLI subcommands / MCP tool names / env vars** preserved.
+- **MCP snapshot test** updated from 6 / 12 / 16 to 7 / 13 / 18.
+
+### Tests
+
+358 tests passing, 0 failures. Up from 280 (v0.3).
+
 ## 0.3.0 — 2026-04-23
 
 Adds the full **admin lifecycle surface** that the v0.2 runtime
